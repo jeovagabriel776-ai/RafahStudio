@@ -11,79 +11,51 @@ const dateLabel = d => d ? new Date(`${d}T12:00:00`).toLocaleDateString('pt-BR',
 const esc = v => String(v ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
 const initials = v => String(v||'Designer').trim().split(/\s+/).slice(0,2).map(x=>x[0]).join('').toUpperCase() || 'D';
 const uid = p => `${p}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,8)}`;
-const read = (key, fallback) => { try { const v=localStorage.getItem(key); return v===null?fallback:JSON.parse(v); } catch { return fallback; } };
-const write = (key, value) => localStorage.setItem(key, JSON.stringify(value));
 
-// ============================================================
-// RAFAHSTUDIO — SUPABASE ONLINE BRIEFING
-// ============================================================
+// Supabase - briefing online
 const SUPABASE_URL = 'https://jnazqhxptrtearaocvpx.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_TumK-xOT32ZdrtWfIYLI8g_VsSTEsve';
-let supabaseClient = null;
-const OWNER_TOKEN_KEY = `${APP}:owner-token`;
-function getOwnerToken(){
-  let token = localStorage.getItem(OWNER_TOKEN_KEY);
-  if(!token){
-    const bytes = new Uint8Array(32);
-    crypto.getRandomValues(bytes);
-    token = [...bytes].map(b=>b.toString(16).padStart(2,'0')).join('');
-    localStorage.setItem(OWNER_TOKEN_KEY, token);
-  }
-  return token;
-}
-function briefingHeaders(){ return {'x-rafah-owner-token': getOwnerToken()}; }
-function getSupabaseClient(){
-  if(!window.supabase || !SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) return null;
-  return window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {global:{headers:briefingHeaders()}});
-}
-async function uploadBriefingFile(file, briefingId, folder='files'){
-  supabaseClient=getSupabaseClient();
-  if(!supabaseClient) throw new Error('Supabase não carregou.');
-  const safeName = String(file.name).replace(/[^a-zA-Z0-9._-]/g,'_');
-  const path = `${getOwnerToken()}/${briefingId}/${folder}/${crypto.randomUUID ? crypto.randomUUID() : uid('file')}-${safeName}`;
-  const { error } = await supabaseClient.storage.from('briefing-files').upload(path, file, { upsert:false, contentType:file.type||'application/octet-stream' });
+const supabaseClient = window.supabase?.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+const ownerTokenKey = user => `${APP}:owner-token:${user||'default'}`;
+const publicTokenKey = user => `${APP}:public-token:${user||'default'}`;
+function randomToken(){return (crypto.randomUUID?.()||uid('tok'))+'-'+Math.random().toString(36).slice(2)+Date.now().toString(36);}
+function getOwnerToken(){const u=currentUser?.user||'default';let t=localStorage.getItem(ownerTokenKey(u));if(!t){t=randomToken();localStorage.setItem(ownerTokenKey(u),t);}return t;}
+function getPublicToken(){const u=currentUser?.user||'default';let t=localStorage.getItem(publicTokenKey(u));if(!t){t=randomToken();localStorage.setItem(publicTokenKey(u),t);}return t;}
+function briefingTokenFromHash(){try{const h=location.hash.slice('#briefing='.length);if(!h)return '';const p=JSON.parse(decodeURIComponent(escape(atob(h))));return p.publicToken||'';}catch{return '';}}
+async function uploadBriefingFile(file, publicToken, briefingId, index){
+  if(!supabaseClient) throw new Error('Biblioteca do Supabase não carregou.');
+  const safeName=(file.name||`arquivo-${index}`).replace(/[^a-zA-Z0-9._-]/g,'_');
+  const path=`${publicToken}/${briefingId}/${Date.now()}-${index}-${safeName}`;
+  const {error}=await supabaseClient.storage.from('briefing-files').upload(path,file,{upsert:false,contentType:file.type||'application/octet-stream'});
   if(error) throw error;
-  const { data } = supabaseClient.storage.from('briefing-files').getPublicUrl(path);
-  return {name:file.name,type:file.type||'',size:file.size,path,url:data.publicUrl};
+  const {data}=supabaseClient.storage.from('briefing-files').getPublicUrl(path);
+  return {name:file.name,type:file.type,size:file.size,path,url:data.publicUrl};
 }
-async function saveOnlineBriefing(d, rawFiles, personRawFiles){
-  supabaseClient=getSupabaseClient();
-  if(!supabaseClient) throw new Error('Conexão com o Supabase indisponível.');
-  const id = crypto.randomUUID ? crypto.randomUUID() : uid('brief');
-  const uploaded=[];
-  for(const f of rawFiles){ uploaded.push(await uploadBriefingFile(f,id,'files')); }
-  const people=[];
-  for(let i=0;i<personRawFiles.length;i++){
-    const p=personRawFiles[i];
-    let photo=null;
-    if(p.photoFile) photo=await uploadBriefingFile(p.photoFile,id,`people-${i+1}`);
-    people.push({name:p.name,info:p.info,photo});
-  }
-  const payload={id,owner_token:getOwnerToken(),client_name:d.client,whatsapp:d.whats,project_name:d.project,deadline:d.deadline||null,service_type:d.type,texts:d.texts,people,references_text:d.refs,notes:d.notes,files:uploaded,status:'Novo'};
-  const {error}=await supabaseClient.from('briefings').insert(payload);
-  if(error) throw error;
-  return {id,files:uploaded,people};
+async function ensurePublicLink(){
+  if(!supabaseClient||!currentUser)return false;
+  const {error}=await supabaseClient.rpc('register_briefing_link',{p_public_token:getPublicToken(),p_owner_secret:getOwnerToken()});
+  if(error){console.error('RafahStudio link:',error);return false;}
+  return true;
 }
 async function syncOnlineBriefings(){
-  if(!currentUser) return;
+  if(!supabaseClient||!currentUser)return;
   try{
-    supabaseClient=getSupabaseClient();
-    if(!supabaseClient) return;
-    const {data,error}=await supabaseClient.from('briefings').select('*').order('created_at',{ascending:false}).limit(100);
+    const ownerToken=getOwnerToken();
+    const {data,error}=await supabaseClient.rpc('get_briefings_for_owner',{p_owner_secret:getOwnerToken()});
     if(error) throw error;
-    const seen=new Set(orders.filter(o=>o.onlineBriefingId).map(o=>o.onlineBriefingId));
+    const seen=new Set(orders.filter(o=>o.origin==='Briefing online').map(o=>o.remoteId).filter(Boolean));
     let changed=false;
     for(const b of (data||[])){
       if(seen.has(b.id)) continue;
-      const o={id:uid('ord'),onlineBriefingId:b.id,client:b.client_name||'',project:b.project_name||'Sem projeto',deadline:b.deadline||'',value:0,type:b.service_type||'Outro',status:'Novo',priority:'Normal',created:b.created_at||todayISO(),paid:false,origin:'Briefing online',briefing:{client:b.client_name,whats:b.whatsapp,project:b.project_name,deadline:b.deadline,type:b.service_type,texts:b.texts,people:b.people||[],refs:b.references_text,notes:b.notes},files:(b.files||[]).map((f,i)=>({id:`online_${b.id}_${i}`,name:f.name,type:f.type,size:f.size,url:f.url,path:f.path})),history:[]};
-      addHistory(o,'Briefing recebido pelo formulário online');
-      orders.unshift(o); changed=true;
-      // Marcação local impede duplicação no próximo carregamento.
-      notify('Novo briefing recebido',`${o.project} • ${o.client}`,'success','pedidos',o.id);
+      const o={id:uid('ord'),remoteId:b.id,client:b.client_name||'',project:b.project_name||'Sem projeto',deadline:b.deadline||'',value:0,type:b.service_type||'Outro',status:'Novo',priority:'Normal',created:b.created_at?.slice(0,10)||todayISO(),paid:false,origin:'Briefing online',briefing:{texts:b.texts||'',people:b.people||[],refs:b.references_text||'',notes:b.notes||'',whats:b.whatsapp||''},files:Array.isArray(b.files)?b.files:[],history:[]};
+      addHistory(o,'Briefing recebido pelo formulário online'); orders.unshift(o); notifications.unshift({id:uid('ntf'),title:'Novo briefing recebido',body:`${o.project} • ${o.client}`,kind:'success',created:new Date().toISOString(),read:false,linkPage:'pedidos',linkId:o.id}); changed=true;
     }
-    if(changed){persist();render();}
-  }catch(err){ console.warn('RafahStudio: falha ao sincronizar briefings online',err); }
+    if(changed){persist();render();toast('Novo briefing recebido online.');}
+  }catch(err){console.error('RafahStudio Supabase:',err);}
 }
+
+const read = (key, fallback) => { try { const v=localStorage.getItem(key); return v===null?fallback:JSON.parse(v); } catch { return fallback; } };
+const write = (key, value) => localStorage.setItem(key, JSON.stringify(value));
 
 let accounts = read(KEYS.accounts, []);
 let currentUser = read(KEYS.user, null);
@@ -231,54 +203,32 @@ function openQuoteForm(q=null){editingQuoteId=q?.id||null;const x=q||{client:'',
 function deleteQuote(id){const q=quotes.find(x=>x.id===id);if(!q)return;if(!confirm(`Excluir o orçamento “${q.project}”?`))return;quotes=quotes.filter(x=>x.id!==id);persist();render();toast('Orçamento excluído.','info');}
 function quoteToOrder(id){const q=quotes.find(x=>x.id===id);if(!q)return;const o={id:uid('ord'),client:q.client,project:q.project,deadline:q.valid,value:q.total,type:'Orçamento convertido',status:'Novo',priority:'Normal',created:todayISO(),paid:false,origin:'Orçamento',briefing:{notes:q.terms},files:[],history:[]};addHistory(o,'Pedido criado a partir do orçamento');orders.unshift(o);q.status='Aprovado';persist();render();closeModal();go('pedidos');notify('Orçamento convertido em pedido',`${q.project} • ${q.client}`,'success','pedidos',o.id);toast('Pedido criado a partir do orçamento.');}
 
-function generateLink(){
- const payload={v:3,createdBy:currentUser?.user||'',designer:designer.name||'Designer',ownerToken:getOwnerToken()};
- const encoded=btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
- const url=`${location.href.split('#')[0]}#briefing=${encoded}`;
- $('#briefingLinkBox').classList.remove('hidden');
- $('#briefingLinkBox').innerHTML=`<div><b>Seu link de briefing online</b><small>Envie este link ao cliente. Os arquivos serão armazenados na nuvem.</small><code>${esc(url)}</code></div><button class="btn primary" data-copy-text="${esc(url)}">Copiar link</button>`;
- return url;
+async function generateLink(){
+ if(!supabaseClient){toast('Supabase não carregou. Atualize a página.','error');return '';}
+ if(!(await ensurePublicLink())){toast('Não foi possível preparar o link de briefing.','error');return '';}
+ const payload={v:4,designer:designer.name||'Designer',publicToken:getPublicToken()}; const encoded=btoa(unescape(encodeURIComponent(JSON.stringify(payload)))); const url=`${location.href.split('#')[0]}#briefing=${encoded}`; $('#briefingLinkBox').classList.remove('hidden'); $('#briefingLinkBox').innerHTML=`<div><b>Seu link de briefing</b><small>Envie este link ao cliente. O formulário não mostra valores.</small><code>${esc(url)}</code></div><button class="btn primary" data-copy-text="${esc(url)}">Copiar link</button>`; return url;
 }
 function copyText(text){navigator.clipboard?.writeText(text).then(()=>toast('Link copiado.')).catch(()=>{const ta=document.createElement('textarea');ta.value=text;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();toast('Link copiado.');});}
 function openPublic(){ $('#authScreen').classList.add('hidden');$('#app').classList.add('hidden');$('#publicPage').classList.remove('hidden'); }
-function handlePublicHash(){const raw=location.hash.startsWith('#briefing=');if(!raw)return false;try{const p=JSON.parse(decodeURIComponent(escape(atob(location.hash.slice('#briefing='.length)))));if(p.ownerToken)localStorage.setItem(OWNER_TOKEN_KEY,p.ownerToken);}catch{}openPublic();return true;}
-async function readFiles(fileList){const arr=[];for(const f of [...fileList]){if(f.size>8*1024*1024){toast(`${f.name} é maior que 8 MB e não foi anexado.`,'error');continue;}const data=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(f);});arr.push({id:uid('file'),name:f.name,type:f.type,size:f.size,dataUrl:data});}return arr;}
-function setupPublic(){
- let people=[];
- let personFiles=[];
- let selectedPublicFiles=[];
- function paintPeople(){
-   $('#peopleList').innerHTML=people.map((p,i)=>`<div class="person-row"><div class="person-num">${i+1}</div><label>Nome<input data-person-name="${i}" value="${esc(p.name)}" required></label><label>Participação / informação<input data-person-info="${i}" value="${esc(p.info)}"></label><label class="person-photo">Foto<input data-person-photo="${i}" type="file" accept="image/*"><small>${p.photo?.name||'Opcional'}</small></label><button type="button" class="icon-action danger" data-remove-person="${i}">×</button></div>`).join('');
- }
- $('#addPersonBtn').onclick=()=>{people.push({name:'',info:'',photo:null});personFiles.push(null);paintPeople();};
- $('#peopleList').addEventListener('input',e=>{const i=e.target.dataset.personName??e.target.dataset.personInfo;if(i!==undefined){if(e.target.dataset.personName!==undefined)people[i].name=e.target.value;else people[i].info=e.target.value;}});
- $('#peopleList').addEventListener('change',e=>{const i=e.target.dataset.personPhoto;if(i!==undefined&&e.target.files[0]){people[i].photo={name:e.target.files[0].name};personFiles[Number(i)]=e.target.files[0];paintPeople();}});
- $('#peopleList').addEventListener('click',e=>{const b=e.target.closest('[data-remove-person]');if(b){const i=Number(b.dataset.removePerson);people.splice(i,1);personFiles.splice(i,1);paintPeople();}});
- $('#pubFiles').addEventListener('change',e=>{selectedPublicFiles=[...e.target.files].filter(f=>f.size<=8*1024*1024);$('#filePreview').innerHTML=selectedPublicFiles.map(f=>`<span>${esc(f.name)} <small>${formatBytes(f.size)}</small></span>`).join('');});
- $('#briefingForm').onsubmit=async e=>{
-   e.preventDefault();
-   const rawFiles=selectedPublicFiles;
-   const d={client:$('#pubName').value.trim(),whats:$('#pubWhats').value.trim(),project:$('#pubProject').value.trim(),deadline:$('#pubEvent').value,type:$('#pubType').value,texts:$('#pubTexts').value,people:people.map(p=>({name:p.name,info:p.info})),refs:$('#pubRefs').value,notes:$('#pubNotes').value,created:todayISO()};
+function handlePublicHash(){const raw=location.hash.startsWith('#briefing=');if(!raw)return false;openPublic();return true;}
+async function readFiles(fileList){const arr=[];for(const f of [...fileList]){if(f.size>8*1024*1024){toast(`${f.name} é maior que 8 MB e não foi anexado.`,'error');continue;}const data=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(f);});arr.push({id:uid('file'),name:f.name,type:f.type,size:f.size,dataUrl:data,file:f});}return arr;}
+function setupPublic(){let people=[];function paintPeople(){ $('#peopleList').innerHTML=people.map((p,i)=>`<div class="person-row"><div class="person-num">${i+1}</div><label>Nome<input data-person-name="${i}" value="${esc(p.name)}" required></label><label>Participação / informação<input data-person-info="${i}" value="${esc(p.info)}"></label><label class="person-photo">Foto<input data-person-photo="${i}" type="file" accept="image/*"><small>${p.photo?.name||'Opcional'}</small></label><button type="button" class="icon-action danger" data-remove-person="${i}">×</button></div>`).join('');}
+ $('#addPersonBtn').onclick=()=>{people.push({name:'',info:'',photo:null});paintPeople();}; $('#peopleList').addEventListener('input',e=>{const i=e.target.dataset.personName??e.target.dataset.personInfo;if(i!==undefined){if(e.target.dataset.personName!==undefined)people[i].name=e.target.value;else people[i].info=e.target.value;}});$('#peopleList').addEventListener('change',async e=>{const i=e.target.dataset.personPhoto;if(i!==undefined&&e.target.files[0])people[i].photo=(await readFiles(e.target.files))[0];});$('#peopleList').addEventListener('click',e=>{const b=e.target.closest('[data-remove-person]');if(b){people.splice(Number(b.dataset.removePerson),1);paintPeople();}});$('#pubFiles').addEventListener('change',async e=>{const fs=await readFiles(e.target.files);$('#filePreview').innerHTML=fs.map(f=>`<span>${esc(f.name)} <small>${formatBytes(f.size)}</small></span>`).join('');$('#pubFiles')._files=fs;});
+ $('#briefingForm').onsubmit=async e=>{e.preventDefault();
+   if(!supabaseClient){$('#publicMessage').textContent='Não foi possível enviar agora. A biblioteca do Supabase não carregou. Verifique sua conexão e atualize a página.';return;}
+   const publicToken=briefingTokenFromHash(); if(!publicToken){$('#publicMessage').textContent='Link de briefing inválido ou expirado. Solicite um novo link ao designer.';return;}
+   const files=$('#pubFiles')._files||[];const persons=people.map(p=>({name:p.name,info:p.info,photo:p.photo?{name:p.photo.name,type:p.photo.type,size:p.photo.size}:null}));
+   const d={client:$('#pubName').value.trim(),whats:$('#pubWhats').value.trim(),project:$('#pubProject').value.trim(),deadline:$('#pubEvent').value,type:$('#pubType').value,texts:$('#pubTexts').value,people:persons,refs:$('#pubRefs').value,notes:$('#pubNotes').value};
    if(!d.client||!d.project){$('#publicMessage').textContent='Nome e projeto são obrigatórios.';return;}
-   const btn=e.submitter||$('#briefingForm button[type=submit]');
-   if(btn){btn.disabled=true;btn.dataset.original=btn.innerHTML;btn.innerHTML='Enviando…';}
-   $('#publicMessage').textContent='Enviando informações e arquivos com segurança…';
+   const btn=$('#briefingForm button[type="submit"]'); if(btn){btn.disabled=true;btn.textContent='Enviando…';}
    try{
-     if(!supabaseClient) throw new Error('Biblioteca do Supabase não carregou.');
-     // O token do link identifica o workspace; o cliente não precisa criar conta.
-     let linkToken='';
-     try{const raw=location.hash.slice('#briefing='.length);const p=JSON.parse(decodeURIComponent(escape(atob(raw))));linkToken=p.ownerToken||'';}catch{}
-     if(linkToken && linkToken.length>=16) localStorage.setItem(OWNER_TOKEN_KEY,linkToken);
-     const result=await saveOnlineBriefing(d,rawFiles,personFiles.map((photoFile,i)=>({name:people[i]?.name||'',info:people[i]?.info||'',photoFile})));
+     const briefingId=crypto.randomUUID?.()||uid('brief'); const uploaded=[];
+     for(let i=0;i<files.length;i++){if(files[i].file) uploaded.push(await uploadBriefingFile(files[i].file,publicToken,briefingId,i));}
+     for(let i=0;i<people.length;i++){if(people[i].photo?.file){const up=await uploadBriefingFile(people[i].photo.file,publicToken,briefingId,`p${i}`);d.people[i].photo=up;}}
+     const {error}=await supabaseClient.rpc('submit_briefing',{p_public_token:publicToken,p_briefing_id:briefingId,p_client_name:d.client,p_whatsapp:d.whats,p_project_name:d.project,p_deadline:d.deadline||null,p_service_type:d.type,p_texts:d.texts,p_people:d.people,p_references_text:d.refs,p_notes:d.notes,p_files:uploaded}); if(error)throw error;
      $('#publicFormView').classList.add('hidden');$('#publicSuccess').classList.remove('hidden');$('#successProject').textContent=d.project;
-     $('#publicMessage').textContent='';
-   }catch(err){
-     console.error(err);$('#publicMessage').textContent=`Não foi possível enviar agora. ${err?.message||'Verifique sua conexão e tente novamente.'}`;
-   }finally{if(btn){btn.disabled=false;btn.innerHTML=btn.dataset.original||'Enviar briefing →';}}
- };
- $('#closePublicBtn').onclick=()=>{location.hash='';if(currentUser)showApp();else showAuth('login');};
- paintPeople();
-}
+   }catch(err){console.error(err);$('#publicMessage').textContent=`Não foi possível enviar. ${err?.message||'Tente novamente.'}`;if(btn){btn.disabled=false;btn.textContent='Enviar briefing →';}}
+ }; $('#closePublicBtn').onclick=()=>{location.hash='';if(currentUser)showApp();else showAuth('login');};paintPeople(); }
 
 function exportBackup(){const payload={version:2,exportedAt:new Date().toISOString(),designer,orders,clients,quotes,notifications};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});downloadBlob(blob,`rafahstudio-backup-${todayISO()}.json`);toast('Backup exportado.');}
 function importBackup(file){const r=new FileReader();r.onload=()=>{try{const p=JSON.parse(r.result);if(!p||!Array.isArray(p.orders))throw new Error();orders=p.orders.map(normalizeOrder);clients=Array.isArray(p.clients)?p.clients:[];quotes=Array.isArray(p.quotes)?p.quotes:[];notifications=Array.isArray(p.notifications)?p.notifications:[];designer={...designer,...(p.designer||{})};persist();render();toast('Backup importado com sucesso.');}catch{toast('Arquivo de backup inválido.','error');}};r.readAsText(file);}
@@ -311,7 +261,7 @@ function handleDelegated(e){const a=e.target.closest('[data-action]');if(a){cons
  const pdfQ=e.target.closest('[data-quote-pdf]');if(pdfQ)generateQuotePDF(pdfQ.dataset.quotePdf);
  const copy=e.target.closest('[data-copy-text]');if(copy)copyText(copy.dataset.copyText);
  const notif=e.target.closest('[data-notification]');if(notif){const n=notifications.find(x=>x.id===notif.dataset.notification);if(n){n.read=true;persist();renderNotifications();if(n.linkId)openOrderView(n.linkId);}}
- const dl=e.target.closest('[data-download-file]');if(dl){const [oid,idx]=dl.dataset.downloadFile.split(':');const o=orders.find(x=>x.id===oid),f=o?.files?.[Number(idx)];if(f?.dataUrl||f?.url){const a=document.createElement('a');a.href=f.dataUrl||f.url;a.download=f.name||'arquivo';a.target='_blank';a.rel='noopener';document.body.appendChild(a);a.click();a.remove();}else toast('Arquivo original não está disponível neste armazenamento local.','error');}
+ const dl=e.target.closest('[data-download-file]');if(dl){const [oid,idx]=dl.dataset.downloadFile.split(':');const o=orders.find(x=>x.id===oid),f=o?.files?.[Number(idx)];if(f?.dataUrl){const a=document.createElement('a');a.href=f.dataUrl;a.download=f.name;document.body.appendChild(a);a.click();a.remove();}else toast('Arquivo original não está disponível neste armazenamento local.','error');}
  const preview=e.target.closest('[data-preview-file]');if(preview)modal(`<div class="image-modal"><button class="close-modal" data-close-modal>×</button><img src="${preview.src}" alt="Pré-visualização"></div>`);
  const tab=e.target.closest('#orderTabs button');if(tab){orderFilter=tab.dataset.filter;renderOrders();}
   const closeButton=e.target.closest('.close-modal,[data-close-modal]');if(closeButton)closeModal();
@@ -326,6 +276,6 @@ function init(){
  setupEvents();setupPublic();initPublicTheme();
  if(localStorage.getItem(KEYS.theme)==='dark'){document.body.classList.add('dark');$('#themeLabel').textContent='Escuro';}
  if(handlePublicHash())return;
- if(currentUser){loadScoped();showApp();syncOnlineBriefings();setInterval(syncOnlineBriefings,30000);}else showAuth('login');
+ if(currentUser){loadScoped();showApp();setTimeout(syncOnlineBriefings,400);setInterval(syncOnlineBriefings,30000);}else showAuth('login');
 }
 init();
