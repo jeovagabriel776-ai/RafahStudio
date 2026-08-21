@@ -32,10 +32,45 @@ async function uploadBriefingFile(file, publicToken, briefingId, index){
   return {name:file.name,type:file.type,size:file.size,path,url:data.publicUrl};
 }
 async function ensurePublicLink(){
-  if(!supabaseClient||!currentUser)return false;
-  const {error}=await supabaseClient.rpc('register_briefing_link',{p_public_token:getPublicToken(),p_owner_secret:getOwnerToken()});
-  if(error){console.error('RafahStudio link:',error);return false;}
+  if(!supabaseClient){
+    console.error('RafahStudio: supabaseClient não existe.');
+    return false;
+  }
+
+  if(!currentUser){
+    console.error('RafahStudio: currentUser não existe.');
+    return false;
+  }
+
+  const publicToken = getPublicToken();
+  const ownerToken = getOwnerToken();
+
+  console.log('RafahStudio: preparando link...');
+  console.log('Public token:', publicToken);
+  console.log('Owner token existe:', !!ownerToken);
+  console.log('Owner token tamanho:', ownerToken ? ownerToken.length : 0);
+
+  const { data, error } = await supabaseClient.rpc(
+    'register_briefing_link',
+    {
+      p_public_token: publicToken,
+      p_owner_secret: ownerToken
+    }
+  );
+
+  if(error){
+    console.error('RafahStudio RPC ERROR:', error);
+    console.error('Mensagem:', error.message);
+    console.error('Detalhes:', error.details);
+    console.error('Hint:', error.hint);
+    console.error('Código:', error.code);
+    return false;
+  }
+
+  console.log('RafahStudio: link registrado com sucesso!', data);
+
   return true;
+}
 }
 async function syncOnlineBriefings(){
   if(!supabaseClient||!currentUser)return;
