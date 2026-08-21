@@ -1,8 +1,0 @@
-COLOCAR SUA LOGO
-
-1. Crie/adicione sua imagem de logo nesta pasta: assets/logo.png
-2. Use PNG com fundo transparente, de preferência quadrado (ex.: 512x512).
-3. Não altere o HTML. Ao recarregar o RafahStudio, a imagem substituirá automaticamente o R.
-4. Se logo.png não existir, o sistema mostrará o R como fallback.
-
-Formatos recomendados: PNG transparente ou WEBP. Para usar outro formato, altere src="assets/logo.png" no index.html.
