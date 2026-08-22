@@ -112,3 +112,38 @@ body.modal-open{overflow:hidden}
  .trash-row{grid-template-columns:1fr auto}
  .trash-row .status-pill{display:none}
 }
+
+
+/* Atualização final — leitura confortável, contas lembradas e identidade visual */
+body{font-size:15px}
+.eyebrow{font-size:11px}
+.nav-item{font-size:13px}
+.nav-icon{font-size:17px}
+.side-profile b{font-size:13px}
+.side-profile small{font-size:10px}
+.side-username{display:block;color:#637773!important;margin-top:2px}
+.page-head h1{font-size:38px}
+.page-head p{font-size:14px}
+.breadcrumb span{font-size:10px}
+.breadcrumb b{font-size:17px}
+.btn{font-size:13px;padding:12px 16px}
+.auth-form label,.modal label,.public-card label,.profile-fields label{font-size:13px}
+.auth-form input,.auth-form select,.modal input,.modal select,.modal textarea,.public-card input,.public-card select,.public-card textarea,.profile-fields input,.profile-fields textarea{font-size:14px;padding:13px 14px}
+.auth-switch,.text-btn{font-size:13px}
+.local-note{font-size:11px;line-height:1.5}
+.metric-card small{font-size:11px}.metric-card strong{font-size:26px}.metric-card>span:last-child{font-size:10px}
+.card-title b{font-size:15px}.card-title small{font-size:11px}
+.order-stage-head b{font-size:13px}.order-stage-head em{font-size:10px}.order-stage-head small{font-size:10px}
+.order-card{padding:14px}.order-card .project-cell b{font-size:12px}.order-card .project-cell small{font-size:10px}.order-card-meta{font-size:10px}.order-card-meta strong{font-size:11px}.online-badge{font-size:8px}.order-card-actions .small{font-size:10px}
+.stage-empty{font-size:10px}
+.modal-head h2{font-size:24px}.muted{font-size:11px}
+.detail-card b{font-size:13px}.detail-card dt{font-size:10px}.detail-card dd{font-size:12px}.detail-text{font-size:12px;line-height:1.6}
+.history b{font-size:11px}.history small{font-size:10px}
+.client-detail-top small{font-size:10px}.client-summary small{font-size:10px}.client-summary b{font-size:12px}.history-project b{font-size:11px}.history-project small{font-size:10px}.history-project strong{font-size:11px}
+.public-intro p{font-size:15px;line-height:1.6}.public-card{padding:29px}.section-title b{font-size:13px}.section-title small{font-size:10px}.upload-zone b{font-size:13px}.upload-zone small{font-size:10px}.file-preview span{font-size:10px}.public-actions>span{font-size:10px}.form-message{font-size:11px}
+.public-success p{font-size:14px;line-height:1.6}
+.remembered-accounts{max-width:430px;width:100%;margin:18px auto 0}.remembered-title{font-size:11px;font-weight:800;color:var(--muted);margin-bottom:8px}.remembered-list{display:grid;gap:7px}.remembered-account{width:100%;border:1px solid var(--line);background:var(--surface-2);color:var(--ink);border-radius:13px;padding:9px 11px;display:flex;align-items:center;gap:10px;text-align:left;transition:.18s}.remembered-account:hover{border-color:#72cdb4;transform:translateY(-1px)}.remembered-account .avatar{width:34px;height:34px;flex-basis:34px}.remembered-account b,.remembered-account small{display:block}.remembered-account b{font-size:12px}.remembered-account small{font-size:10px;color:var(--muted);margin-top:2px}.remembered-arrow{margin-left:auto;color:var(--muted);font-size:16px}
+.logo-slot{width:44px;height:44px;flex-basis:44px}.site-logo{width:44px;height:44px;border-radius:13px}.logo-mark{width:44px;height:44px}
+
+@media(max-width:800px){.page-head h1{font-size:32px}.main{padding-left:24px;padding-right:24px}}
+@media(max-width:560px){body{font-size:14px}.page-head h1{font-size:30px}.public-card{padding:20px}.remembered-accounts{margin-top:14px}}

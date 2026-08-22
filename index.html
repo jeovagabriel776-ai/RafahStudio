@@ -13,7 +13,7 @@
   <section id="authScreen" class="auth-screen">
     <div class="auth-art">
       <div class="auth-grid"></div>
-      <div class="auth-brand"><span class="logo-slot"><img class="site-logo" src="assets/logo.png" alt="RafahStudio" onerror="this.style.display='none'; this.nextElementSibling.style.display='grid';"><span class="logo-mark logo-fallback">R</span></span><span>RafahStudio</span></div>
+      <div class="auth-brand"><span class="logo-slot"><img class="site-logo" src="assets/logo.svg" alt="RafahStudio" onerror="if(this.dataset.fallback!=='1'){this.dataset.fallback='1';this.src='assets/logo.png';}else{this.style.display='none';this.nextElementSibling.style.display='grid';}"><span class="logo-mark logo-fallback">R</span></span><span>RafahStudio</span></div>
       <div class="auth-copy">
         <span class="eyebrow">GESTÃO PARA DESIGNERS</span>
         <h1>Seu estúdio organizado.<br><em>Seu trabalho no controle.</em></h1>
@@ -23,7 +23,7 @@
     </div>
     <div class="auth-panel">
       <div class="auth-panel-head">
-        <div class="mobile-brand"><span class="logo-slot"><img class="site-logo" src="assets/logo.png" alt="RafahStudio" onerror="this.style.display='none'; this.nextElementSibling.style.display='grid';"><span class="logo-mark logo-fallback">R</span></span><b>RafahStudio</b></div>
+        <div class="mobile-brand"><span class="logo-slot"><img class="site-logo" src="assets/logo.svg" alt="RafahStudio" onerror="if(this.dataset.fallback!=='1'){this.dataset.fallback='1';this.src='assets/logo.png';}else{this.style.display='none';this.nextElementSibling.style.display='grid';}"><span class="logo-mark logo-fallback">R</span></span><b>RafahStudio</b></div>
         <span class="eyebrow" id="authEyebrow">ACESSAR CONTA</span>
         <h2 id="authTitle">Bem-vindo de volta</h2>
         <p id="authSubtitle">Entre para gerenciar seu estúdio.</p>
@@ -34,6 +34,7 @@
         <button class="btn primary wide" type="submit">Entrar <span>→</span></button>
         <button class="auth-switch" type="button" id="showRegisterBtn">Ainda não tenho conta</button>
       </form>
+      <div id="rememberedAccounts" class="remembered-accounts"></div>
       <form id="registerForm" class="auth-form hidden">
         <label>Nome completo<input id="regName" required></label>
         <div class="two-col">
@@ -45,13 +46,13 @@
         <button class="btn primary wide" type="submit">Criar minha conta <span>→</span></button>
         <button class="auth-switch" type="button" id="showLoginBtn">Já tenho uma conta</button>
       </form>
-      <small class="local-note">Versão local: os dados ficam neste navegador até conectar um banco online.</small>
+      <small class="local-note">Suas preferências ficam salvas automaticamente neste dispositivo. Os briefings enviados pelos clientes são recebidos online e ficam disponíveis no seu painel.</small>
     </div>
   </section>
 
   <section id="publicPage" class="public-page hidden">
     <div class="public-wrap">
-      <div class="public-top"><div class="auth-brand"><span class="logo-slot"><img class="site-logo" src="assets/logo.png" alt="RafahStudio" onerror="this.style.display='none'; this.nextElementSibling.style.display='grid';"><span class="logo-mark logo-fallback">R</span></span><b>RafahStudio</b></div><div class="public-tools"><span class="chip">BRIEFING ONLINE</span><button type="button" class="public-theme-btn" id="publicThemeBtn" aria-label="Alternar tema"><span id="publicThemeIcon">☾</span><span id="publicThemeLabel">Escuro</span></button></div></div>
+      <div class="public-top"><div class="auth-brand"><span class="logo-slot"><img class="site-logo" src="assets/logo.svg" alt="RafahStudio" onerror="if(this.dataset.fallback!=='1'){this.dataset.fallback='1';this.src='assets/logo.png';}else{this.style.display='none';this.nextElementSibling.style.display='grid';}"><span class="logo-mark logo-fallback">R</span></span><b>RafahStudio</b></div><div class="public-tools"><span class="chip">BRIEFING ONLINE</span><button type="button" class="public-theme-btn" id="publicThemeBtn" aria-label="Alternar tema"><span id="publicThemeIcon">☾</span><span id="publicThemeLabel">Escuro</span></button></div></div>
       <div id="publicFormView">
         <div class="public-intro"><span class="eyebrow">ENVIO DE PROJETO</span><h1>Vamos preparar sua arte.</h1><p>Preencha as informações abaixo. Quanto mais detalhes você enviar, melhor o designer poderá executar seu projeto.</p></div>
         <form id="briefingForm" class="public-card">
@@ -63,14 +64,14 @@
           <p id="publicMessage" class="form-message"></p>
         </form>
       </div>
-      <div id="publicSuccess" class="public-success hidden"><div class="success-icon">✓</div><span class="eyebrow">ENVIADO COM SUCESSO</span><h1>Briefing recebido!</h1><p>As informações do projeto <b id="successProject"></b> foram enviadas.</p><button class="btn secondary" id="closePublicBtn">Fechar</button></div>
+      <div id="publicSuccess" class="public-success hidden"><div class="success-icon">✓</div><span class="eyebrow">ENVIADO COM SUCESSO</span><h1>Pedido enviado com sucesso!</h1><p>Recebemos as informações de <b id="successProject"></b>. O pedido já foi encaminhado para o designer.</p><button class="btn secondary" id="closePublicBtn">Concluir</button></div>
     </div>
   </section>
 
   <div id="app" class="app hidden">
     <aside class="sidebar" id="sidebar">
-      <div class="side-brand"><span class="logo-slot"><img class="site-logo" src="assets/logo.png" alt="RafahStudio" onerror="this.style.display='none'; this.nextElementSibling.style.display='grid';"><span class="logo-mark logo-fallback">R</span></span><div><b>Rafah<span>Studio</span></b><small>Workspace</small></div></div>
-      <div class="side-profile"><div id="sideAvatar" class="avatar avatar-lg">JG</div><div><b id="sideName">Designer</b><small id="sideRole">Designer gráfico</small></div><button id="profileQuick" class="icon-btn" title="Meu perfil">•••</button></div>
+      <div class="side-brand"><span class="logo-slot"><img class="site-logo" src="assets/logo.svg" alt="RafahStudio" onerror="if(this.dataset.fallback!=='1'){this.dataset.fallback='1';this.src='assets/logo.png';}else{this.style.display='none';this.nextElementSibling.style.display='grid';}"><span class="logo-mark logo-fallback">R</span></span><div><b>Rafah<span>Studio</span></b><small>Workspace</small></div></div>
+      <div class="side-profile"><div id="sideAvatar" class="avatar avatar-lg">JG</div><div><b id="sideName">Designer</b><small id="sideRole">Designer gráfico</small><small id="sideUsername" class="side-username">@usuario</small></div><button id="profileQuick" class="icon-btn" title="Meu perfil">•••</button></div>
       <nav class="nav-list">
         <button class="nav-item active" data-page="dashboard"><span class="nav-icon">⌂</span><span>Dashboard</span></button>
         <button class="nav-item" data-page="pedidos"><span class="nav-icon">▤</span><span>Pedidos</span><em id="navOrders">0</em></button>
@@ -88,12 +89,12 @@
         <div class="top-actions">
           <label class="global-search"><span>⌕</span><input id="globalSearch" placeholder="Buscar em pedidos, clientes e orçamentos..."></label>
           <button class="icon-btn notification-trigger" id="notificationBtn" title="Notificações"><span>♧</span><em id="notifyCount">0</em></button>
-          <button class="user-trigger" id="userTrigger"><span id="topAvatar" class="avatar">JG</span><span class="user-name" id="topName">Designer</span><span>⌄</span></button>
+
         </div>
       </header>
 
       <section id="dashboard" class="page active">
-        <div class="page-head dashboard-head"><div><span class="eyebrow">VISÃO GERAL</span><h1>Olá, <span id="dashName">Designer</span>! <span class="wave">👋</span></h1><p>Veja o que precisa da sua atenção hoje.</p></div><div class="head-date" id="todayLabel"></div></div>
+        <div class="page-head dashboard-head"><div><span class="eyebrow">VISÃO GERAL</span><h1>Olá, <span id="dashName">Designer</span>! <span class="wave">👋</span></h1><p>Acompanhe seus pedidos, prazos e recebimentos em um só lugar.</p></div><div class="head-date" id="todayLabel"></div></div>
         <div class="metric-grid">
           <article class="metric-card accent"><div class="metric-icon">▤</div><small>Pedidos ativos</small><strong id="mActive">0</strong><span id="mActiveSub">0 em andamento</span></article>
           <article class="metric-card"><div class="metric-icon purple">✦</div><small>Novos briefings</small><strong id="mNew">0</strong><span>aguardando organização</span></article>
@@ -112,13 +113,13 @@
         <div class="table-card orders-board-wrap"><div id="ordersTable" class="orders-board"></div></div>
       </section>
 
-      <section id="clientes" class="page"><div class="page-head"><div><span class="eyebrow">RELACIONAMENTO</span><h1>Clientes</h1><p>Tenha todos os contatos e projetos organizados.</p></div><button class="btn primary" data-action="new-client">+ Novo cliente</button></div><div class="toolbar"><label class="search-box"><span>⌕</span><input id="clientSearch" placeholder="Buscar clientes por nome, empresa ou WhatsApp..."></label></div><div id="clientsGrid" class="client-grid"></div></section>
+      <section id="clientes" class="page"><div class="page-head"><div><span class="eyebrow">RELACIONAMENTO</span><h1>Clientes</h1><p>Centralize os dados de cada cliente e acompanhe os projetos com facilidade.</p></div><button class="btn primary" data-action="new-client">+ Novo cliente</button></div><div class="toolbar"><label class="search-box"><span>⌕</span><input id="clientSearch" placeholder="Buscar clientes por nome, empresa ou WhatsApp..."></label></div><div id="clientsGrid" class="client-grid"></div></section>
 
       <section id="orcamentos" class="page"><div class="page-head"><div><span class="eyebrow">COMERCIAL</span><h1>Orçamentos</h1><p>Crie propostas, envie em PDF e transforme em pedido quando aprovado.</p></div><button class="btn primary" data-action="new-quote">+ Novo orçamento</button></div><div class="toolbar"><label class="search-box"><span>⌕</span><input id="quoteSearch" placeholder="Buscar orçamento por projeto ou cliente..."></label><select id="quoteFilter"><option value="all">Todos os status</option><option>Rascunho</option><option>Enviado</option><option>Aprovado</option><option>Recusado</option></select></div><div class="table-card"><div class="table-head quote-head"><span>Projeto</span><span>Cliente</span><span>Validade</span><span>Status</span><span>Total</span><span></span></div><div id="quotesTable"></div></div></section>
 
       <section id="financeiro" class="page"><div class="page-head"><div><span class="eyebrow">FINANCEIRO</span><h1>Financeiro</h1><p>Veja o que entrou, o que está pendente e filtre por período.</p></div></div><div class="filter-card"><label>Data inicial<input type="date" id="finStart"></label><label>Data final<input type="date" id="finEnd"></label><label>Status<select id="finStatus"><option value="all">Todos</option><option value="paid">Pagos</option><option value="pending">Pendentes</option></select></label><button class="btn secondary" id="clearFinance">Limpar</button></div><div class="finance-metrics"><div class="finance-total"><small>Total filtrado</small><strong id="fTotal">R$ 0,00</strong></div><div><small>Recebido</small><strong id="fPaid">R$ 0,00</strong></div><div><small>Pendente</small><strong id="fPending">R$ 0,00</strong></div><div><small>Ticket médio</small><strong id="fAverage">R$ 0,00</strong></div></div><div class="table-card"><div class="table-head finance-head"><span>Projeto</span><span>Cliente</span><span>Data</span><span>Status</span><span>Valor</span><span></span></div><div id="financeTable"></div></div></section>
 
-      <section id="perfil" class="page"><div class="page-head"><div><span class="eyebrow">SUA CONTA</span><h1>Meu perfil</h1><p>Personalize como sua marca aparece no RafahStudio.</p></div><button class="btn primary" id="saveProfileBtn">Salvar alterações</button></div><div class="profile-layout"><div class="card profile-card"><div class="profile-cover"></div><div class="profile-main"><div class="avatar-upload"><div id="profileAvatar" class="avatar avatar-xl">JG</div><label class="upload-avatar">Alterar foto<input type="file" id="profilePhoto" accept="image/*"></label></div><div class="profile-fields"><div class="two-col"><label>Nome<input id="dName"></label><label>Nome da marca<input id="dBrand"></label></div><div class="two-col"><label>WhatsApp<input id="dWhats"></label><label>E-mail<input id="dEmail" type="email"></label></div><div class="two-col"><label>Instagram<input id="dInsta"></label><label>Portfólio<input id="dPortfolio"></label></div><label>Área de atuação<input id="dArea"></label><label>Descrição curta<textarea id="dBio" rows="4"></textarea></label></div></div></div><div class="card profile-side"><b>Conta</b><small>Usuário</small><strong id="profileUser">—</strong><small>Armazenamento</small><strong>Local / navegador</strong><small>Plano</small><strong>Workspace</strong><div class="profile-tip">💡 Faça backups regularmente enquanto o sistema estiver em modo local.</div><button class="btn secondary wide" id="exportBackupBtn">↓ Exportar backup</button><label class="import-backup btn secondary wide">↑ Importar backup<input type="file" id="importBackup" accept="application/json"></label></div></div></section>
+      <section id="perfil" class="page"><div class="page-head"><div><span class="eyebrow">SUA CONTA</span><h1>Meu perfil</h1><p>Personalize como sua marca aparece no RafahStudio.</p></div><button class="btn primary" id="saveProfileBtn">Salvar alterações</button></div><div class="profile-layout"><div class="card profile-card"><div class="profile-cover"></div><div class="profile-main"><div class="avatar-upload"><div id="profileAvatar" class="avatar avatar-xl">JG</div><label class="upload-avatar">Alterar foto<input type="file" id="profilePhoto" accept="image/*"></label></div><div class="profile-fields"><div class="two-col"><label>Nome<input id="dName"></label><label>Nome da marca<input id="dBrand"></label></div><div class="two-col"><label>WhatsApp<input id="dWhats"></label><label>E-mail<input id="dEmail" type="email"></label></div><div class="two-col"><label>Instagram<input id="dInsta"></label><label>Portfólio<input id="dPortfolio"></label></div><label>Área de atuação<input id="dArea"></label><label>Descrição curta<textarea id="dBio" rows="4"></textarea></label></div></div></div><div class="card profile-side"><b>Conta</b><small>Usuário</small><strong id="profileUser">—</strong><small>Armazenamento</small><strong>Dados e briefings</strong><small>Plano</small><strong>Workspace</strong><div class="profile-tip">💡 Exporte um backup sempre que quiser guardar uma cópia completa do seu painel.</div><button class="btn secondary wide" id="exportBackupBtn">↓ Exportar backup</button><label class="import-backup btn secondary wide">↑ Importar backup<input type="file" id="importBackup" accept="application/json"></label></div></div></section>
     </main>
   </div>
 
