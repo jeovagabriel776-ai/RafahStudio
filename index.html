@@ -13,7 +13,7 @@
   <section id="authScreen" class="auth-screen">
     <div class="auth-art">
       <div class="auth-grid"></div>
-      <div class="auth-brand"><span class="logo-slot"><img class="site-logo" src="assets/logo.svg" alt="RafahStudio" onerror="if(this.dataset.fallback!=='1'){this.dataset.fallback='1';this.src='assets/logo.png';}else{this.style.display='none';this.nextElementSibling.style.display='grid';}"><span class="logo-mark logo-fallback">R</span></span><span>RafahStudio</span></div>
+      <div class="auth-brand logo-only"><span class="logo-slot"><img class="site-logo" src="assets/logo.svg" alt="Logo"></span></div>
       <div class="auth-copy">
         <span class="eyebrow">GESTÃO PARA DESIGNERS</span>
         <h1>Seu estúdio organizado.<br><em>Seu trabalho no controle.</em></h1>
@@ -23,7 +23,7 @@
     </div>
     <div class="auth-panel">
       <div class="auth-panel-head">
-        <div class="mobile-brand"><span class="logo-slot"><img class="site-logo" src="assets/logo.svg" alt="RafahStudio" onerror="if(this.dataset.fallback!=='1'){this.dataset.fallback='1';this.src='assets/logo.png';}else{this.style.display='none';this.nextElementSibling.style.display='grid';}"><span class="logo-mark logo-fallback">R</span></span><b>RafahStudio</b></div>
+        <div class="mobile-brand logo-only"><span class="logo-slot"><img class="site-logo" src="assets/logo.svg" alt="Logo"></span></div>
         <span class="eyebrow" id="authEyebrow">ACESSAR CONTA</span>
         <h2 id="authTitle">Bem-vindo de volta</h2>
         <p id="authSubtitle">Entre para gerenciar seu estúdio.</p>
@@ -52,14 +52,15 @@
 
   <section id="publicPage" class="public-page hidden">
     <div class="public-wrap">
-      <div class="public-top"><div class="auth-brand"><span class="logo-slot"><img class="site-logo" src="assets/logo.svg" alt="RafahStudio" onerror="if(this.dataset.fallback!=='1'){this.dataset.fallback='1';this.src='assets/logo.png';}else{this.style.display='none';this.nextElementSibling.style.display='grid';}"><span class="logo-mark logo-fallback">R</span></span><b>RafahStudio</b></div><div class="public-tools"><span class="chip">BRIEFING ONLINE</span><button type="button" class="public-theme-btn" id="publicThemeBtn" aria-label="Alternar tema"><span id="publicThemeIcon">☾</span><span id="publicThemeLabel">Escuro</span></button></div></div>
+      <div class="public-top"><div class="auth-brand logo-only"><span class="logo-slot"><img class="site-logo" src="assets/logo.svg" alt="Logo"></span></div><div class="public-tools"><span class="chip">BRIEFING ONLINE</span><button type="button" class="public-theme-btn" id="publicThemeBtn" aria-label="Alternar tema"><span id="publicThemeIcon">☾</span><span id="publicThemeLabel">Escuro</span></button></div></div>
       <div id="publicFormView">
         <div class="public-intro"><span class="eyebrow">ENVIO DE PROJETO</span><h1>Vamos preparar sua arte.</h1><p>Preencha as informações abaixo. Quanto mais detalhes você enviar, melhor o designer poderá executar seu projeto.</p></div>
         <form id="briefingForm" class="public-card">
           <div class="form-section"><div class="section-title"><span>01</span><div><b>Seus dados</b><small>Como podemos falar com você?</small></div></div><div class="two-col"><label>Nome completo<input id="pubName" required></label><label>WhatsApp<input id="pubWhats" inputmode="tel" required></label></div></div>
-          <div class="form-section"><div class="section-title"><span>02</span><div><b>Sobre o projeto</b><small>O nome do projeto ajuda o designer a organizar seu pedido.</small></div></div><div class="two-col"><label>Nome do projeto<input id="pubProject" required placeholder="Ex.: Congresso de Jovens 2026"></label><label>Data do evento / prazo<input id="pubEvent" type="date"></label></div><label>Serviço<select id="pubType"><option>Cartaz</option><option>Cartaz para igreja/evento</option><option>Post para Instagram</option><option>Identidade visual</option><option>Logo</option><option>Outro</option></select></label><label>Textos da arte<textarea id="pubTexts" rows="5" placeholder="Envie todo o texto que precisa aparecer na arte."></textarea></label></div>
-          <div class="form-section"><div class="section-title"><span>03</span><div><b>Pessoas da arte</b><small>Adicione quantas pessoas forem necessárias.</small></div></div><div id="peopleList"></div><button type="button" class="btn secondary" id="addPersonBtn">+ Adicionar pessoa</button></div>
-          <div class="form-section"><div class="section-title"><span>04</span><div><b>Fotos e referências</b><small>Envie imagens originais, referências e materiais.</small></div></div><label class="upload-zone"><input id="pubFiles" type="file" accept="image/*,.pdf" multiple><span class="upload-icon">↑</span><b>Selecionar arquivos</b><small>Você pode enviar várias fotos e referências.</small></label><div id="filePreview" class="file-preview"></div><label>Referências / links<textarea id="pubRefs" rows="3" placeholder="Instagram, Pinterest, link de referência, estilo desejado..."></textarea></label><label>Observações<textarea id="pubNotes" rows="4"></textarea></label></div>
+          <div id="publicCatalogSection" class="form-section catalog-public-section hidden"><div class="section-title"><span>02</span><div><b>Catálogo de referências</b><small>Se quiser, escolha uma arte do catálogo para indicar um estilo ou referência.</small></div></div><div id="publicCatalogGrid" class="public-catalog-grid"></div><p id="catalogSelectionNote" class="catalog-selection-note">Nenhuma arte selecionada.</p></div>
+          <div class="form-section"><div class="section-title"><span>03</span><div><b>Sobre o projeto</b><small>O nome do projeto ajuda o designer a organizar seu pedido.</small></div></div><div class="two-col"><label>Nome do projeto<input id="pubProject" required placeholder="Ex.: Congresso de Jovens 2026"></label><label>Data do evento / prazo<input id="pubEvent" type="date"></label></div><label>Serviço<select id="pubType"><option>Cartaz</option><option>Cartaz para igreja/evento</option><option>Post para Instagram</option><option>Identidade visual</option><option>Logo</option><option>Outro</option></select></label><label>Textos da arte<textarea id="pubTexts" rows="5" placeholder="Envie todo o texto que precisa aparecer na arte."></textarea></label></div>
+          <div class="form-section"><div class="section-title"><span>04</span><div><b>Pessoas da arte</b><small>Adicione quantas pessoas forem necessárias.</small></div></div><div id="peopleList"></div><button type="button" class="btn secondary" id="addPersonBtn">+ Adicionar pessoa</button></div>
+          <div class="form-section"><div class="section-title"><span>05</span><div><b>Fotos e referências</b><small>Envie imagens originais, referências e materiais.</small></div></div><label class="upload-zone"><input id="pubFiles" type="file" accept="image/*,.pdf" multiple><span class="upload-icon">↑</span><b>Selecionar arquivos</b><small>Você pode enviar várias fotos e referências.</small></label><div id="filePreview" class="file-preview"></div><label>Referências / links<textarea id="pubRefs" rows="3" placeholder="Instagram, Pinterest, link de referência, estilo desejado..."></textarea></label><label>Observações<textarea id="pubNotes" rows="4"></textarea></label></div>
           <div class="public-actions"><button class="btn primary" type="submit">Enviar briefing <span>→</span></button><span>Não é necessário informar valor.</span></div>
           <p id="publicMessage" class="form-message"></p>
         </form>
@@ -70,12 +71,13 @@
 
   <div id="app" class="app hidden">
     <aside class="sidebar" id="sidebar">
-      <div class="side-brand"><span class="logo-slot"><img class="site-logo" src="assets/logo.svg" alt="RafahStudio" onerror="if(this.dataset.fallback!=='1'){this.dataset.fallback='1';this.src='assets/logo.png';}else{this.style.display='none';this.nextElementSibling.style.display='grid';}"><span class="logo-mark logo-fallback">R</span></span><div><b>Rafah<span>Studio</span></b><small>Workspace</small></div></div>
+      <div class="side-brand logo-only"><span class="logo-slot"><img class="site-logo" src="assets/logo.svg" alt="Logo"></span></div>
       <div class="side-profile"><div id="sideAvatar" class="avatar avatar-lg">JG</div><div><b id="sideName">Designer</b><small id="sideRole">Designer gráfico</small><small id="sideUsername" class="side-username">@usuario</small></div><button id="profileQuick" class="icon-btn" title="Meu perfil">•••</button></div>
       <nav class="nav-list">
         <button class="nav-item active" data-page="dashboard"><span class="nav-icon">⌂</span><span>Dashboard</span></button>
         <button class="nav-item" data-page="pedidos"><span class="nav-icon">▤</span><span>Pedidos</span><em id="navOrders">0</em></button>
         <button class="nav-item" data-page="clientes"><span class="nav-icon">♙</span><span>Clientes</span></button>
+        <button class="nav-item" data-page="catalogo"><span class="nav-icon">▧</span><span>Catálogo</span></button>
         <button class="nav-item" data-page="orcamentos"><span class="nav-icon">▣</span><span>Orçamentos</span></button>
         <button class="nav-item" data-page="financeiro"><span class="nav-icon">◒</span><span>Financeiro</span></button>
       </nav>
@@ -114,6 +116,9 @@
       </section>
 
       <section id="clientes" class="page"><div class="page-head"><div><span class="eyebrow">RELACIONAMENTO</span><h1>Clientes</h1><p>Centralize os dados de cada cliente e acompanhe os projetos com facilidade.</p></div><button class="btn primary" data-action="new-client">+ Novo cliente</button></div><div class="toolbar"><label class="search-box"><span>⌕</span><input id="clientSearch" placeholder="Buscar clientes por nome, empresa ou WhatsApp..."></label></div><div id="clientsGrid" class="client-grid"></div></section>
+
+
+      <section id="catalogo" class="page"><div class="page-head"><div><span class="eyebrow">PORTFÓLIO</span><h1>Catálogo</h1><p>Selecione trabalhos que podem inspirar novos projetos e disponibilize-os no briefing para seus clientes.</p></div><button class="btn primary" data-action="new-catalog">+ Adicionar ao catálogo</button></div><div class="toolbar"><label class="search-box"><span>⌕</span><input id="catalogSearch" placeholder="Buscar no catálogo..."></label></div><div id="catalogGrid" class="catalog-grid"></div></section>
 
       <section id="orcamentos" class="page"><div class="page-head"><div><span class="eyebrow">COMERCIAL</span><h1>Orçamentos</h1><p>Crie propostas, envie em PDF e transforme em pedido quando aprovado.</p></div><button class="btn primary" data-action="new-quote">+ Novo orçamento</button></div><div class="toolbar"><label class="search-box"><span>⌕</span><input id="quoteSearch" placeholder="Buscar orçamento por projeto ou cliente..."></label><select id="quoteFilter"><option value="all">Todos os status</option><option>Rascunho</option><option>Enviado</option><option>Aprovado</option><option>Recusado</option></select></div><div class="table-card"><div class="table-head quote-head"><span>Projeto</span><span>Cliente</span><span>Validade</span><span>Status</span><span>Total</span><span></span></div><div id="quotesTable"></div></div></section>
 
