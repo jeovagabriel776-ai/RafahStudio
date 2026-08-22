@@ -85,21 +85,138 @@ async function ensurePublicLink(){
     return false;
   }
 }
+let onlineBriefingSyncRunning=false;
+function onlineBriefingFingerprint(b){
+  return [
+    String(b.client_name||'').trim().toLowerCase(),
+    String(b.project_name||'').trim().toLowerCase(),
+    String(b.created_at||'').slice(0,10)
+  ].join('|');
+}
+function orderFingerprint(o){
+  return [
+    String(o.client||'').trim().toLowerCase(),
+    String(o.project||'').trim().toLowerCase(),
+    String(o.created||'').slice(0,10)
+  ].join('|');
+}
 async function syncOnlineBriefings(){
-  if(!supabaseClient||!currentUser)return;
+  if(!supabaseClient||!currentUser||onlineBriefingSyncRunning)return;
+  onlineBriefingSyncRunning=true;
   try{
-    const ownerToken=getOwnerToken();
     const {data,error}=await supabaseClient.rpc('get_briefings_for_owner',{p_owner_secret:getOwnerToken()});
     if(error) throw error;
-    const seen=new Set(orders.filter(o=>o.origin==='Briefing online').map(o=>o.remoteId).filter(Boolean));
+
     let changed=false;
-    for(const b of (data||[])){
-      if(seen.has(b.id)) continue;
-      const o={id:uid('ord'),remoteId:b.id,client:b.client_name||'',project:b.project_name||'Sem projeto',deadline:b.deadline||'',value:0,type:b.service_type||'Outro',status:'Novo',priority:'Normal',created:b.created_at?.slice(0,10)||todayISO(),paid:false,origin:'Briefing online',briefing:{texts:b.texts||'',people:b.people||[],refs:b.references_text||'',notes:b.notes||'',whats:b.whatsapp||''},files:Array.isArray(b.files)?b.files:[],history:[]};
-      addHistory(o,'Briefing recebido pelo formulário online'); orders.unshift(o); notifications.unshift({id:uid('ntf'),title:'Novo briefing recebido',body:`${o.project} • ${o.client}`,kind:'success',created:new Date().toISOString(),read:false,linkPage:'pedidos',linkId:o.id}); changed=true;
+    const onlineOrders=orders.filter(o=>o.origin==='Briefing online');
+    const byRemote=new Map(onlineOrders.filter(o=>o.remoteId).map(o=>[String(o.remoteId),o]));
+    const byFingerprint=new Map();
+    for(const o of onlineOrders){
+      const key=orderFingerprint(o);
+      if(!byFingerprint.has(key))byFingerprint.set(key,[]);
+      byFingerprint.get(key).push(o);
     }
-    if(changed){persist();render();toast('Novo briefing recebido online.');}
-  }catch(err){console.error('RafahStudio Supabase:',err);}
+
+    const duplicatesToRemove=new Set();
+
+    for(const b of (data||[])){
+      const remoteKey=String(b.id);
+      let o=byRemote.get(remoteKey);
+
+      // Compatibilidade com pedidos antigos que foram criados antes do remoteId
+      // ser persistido. Tenta reconhecer o pedido pelo cliente + projeto + data.
+      if(!o){
+        const candidates=(byFingerprint.get(onlineBriefingFingerprint(b))||[])
+          .filter(x=>!x.remoteId && !duplicatesToRemove.has(x.id));
+        if(candidates.length){
+          o=candidates[0];
+          // Se havia mais de um registro local do mesmo briefing, mantém só o primeiro.
+          candidates.slice(1).forEach(x=>duplicatesToRemove.add(x.id));
+          o.remoteId=b.id;
+          changed=true;
+        }
+      }
+
+      const briefing={
+        texts:b.texts||'',
+        people:Array.isArray(b.people)?b.people:[],
+        refs:b.references_text||'',
+        notes:b.notes||'',
+        whats:b.whatsapp||''
+      };
+      const files=Array.isArray(b.files)?b.files:[];
+
+      if(o){
+        // Atualiza somente os dados que vêm do formulário. Não sobrescreve
+        // valor, status, prioridade ou outras edições feitas pelo designer.
+        o.remoteId=b.id;
+        o.origin='Briefing online';
+        o.client=b.client_name||o.client||'';
+        o.project=b.project_name||o.project||'Sem projeto';
+        o.deadline=b.deadline||o.deadline||'';
+        o.type=b.service_type||o.type||'Outro';
+        o.briefing=briefing;
+        o.files=files;
+        o.created=o.created||b.created_at?.slice(0,10)||todayISO();
+        byRemote.set(remoteKey,o);
+        changed=true;
+      }else{
+        o={
+          id:uid('ord'),
+          remoteId:b.id,
+          client:b.client_name||'',
+          project:b.project_name||'Sem projeto',
+          deadline:b.deadline||'',
+          value:0,
+          type:b.service_type||'Outro',
+          status:'Novo',
+          priority:'Normal',
+          created:b.created_at?.slice(0,10)||todayISO(),
+          paid:false,
+          origin:'Briefing online',
+          briefing,
+          files,
+          history:[]
+        };
+        addHistory(o,'Briefing recebido pelo formulário online');
+        orders.unshift(o);
+        byRemote.set(remoteKey,o);
+        changed=true;
+        notifications.unshift({
+          id:uid('ntf'),
+          title:'Novo briefing recebido',
+          body:`${o.project} • ${o.client}`,
+          kind:'success',
+          created:new Date().toISOString(),
+          read:false,
+          linkPage:'pedidos',
+          linkId:o.id
+        });
+      }
+    }
+
+    if(duplicatesToRemove.size){
+      orders=orders.filter(o=>!duplicatesToRemove.has(o.id));
+      changed=true;
+    }
+
+    // Uma segunda limpeza garante que nunca existam dois pedidos locais
+    // apontando para o mesmo briefing do Supabase.
+    const seenRemote=new Set();
+    orders=orders.filter(o=>{
+      if(o.origin!=='Briefing online'||!o.remoteId)return true;
+      const key=String(o.remoteId);
+      if(seenRemote.has(key)){changed=true;return false;}
+      seenRemote.add(key);
+      return true;
+    });
+
+    if(changed){persist();render();}
+  }catch(err){
+    console.error('RafahStudio Supabase:',err);
+  }finally{
+    onlineBriefingSyncRunning=false;
+  }
 }
 
 const read = (key, fallback) => { try { const v=localStorage.getItem(key); return v===null?fallback:JSON.parse(v); } catch { return fallback; } };
@@ -130,7 +247,7 @@ function normalizeStatus(s){
   if(s==='Pago') return 'Pago';
   return STATUS.includes(s)?s:'Novo';
 }
-function normalizeOrder(o){ return {id:o.id||uid('ord'),client:o.client||'',project:o.project||'Sem projeto',deadline:o.deadline||'',value:Number(o.value)||0,type:o.type||'Outro',status:normalizeStatus(o.status),created:o.created||todayISO(),paid:Boolean(o.paid||o.status==='Pago'),origin:o.origin||'Manual',priority:o.priority||'Normal',briefing:o.briefing||{},files:Array.isArray(o.files)?o.files:[],history:Array.isArray(o.history)?o.history:[]}; }
+function normalizeOrder(o){ return {id:o.id||uid('ord'),remoteId:o.remoteId||'',client:o.client||'',project:o.project||'Sem projeto',deadline:o.deadline||'',value:Number(o.value)||0,type:o.type||'Outro',status:normalizeStatus(o.status),created:o.created||todayISO(),paid:Boolean(o.paid||o.status==='Pago'),origin:o.origin||'Manual',priority:o.priority||'Normal',briefing:o.briefing||{},files:Array.isArray(o.files)?o.files:[],history:Array.isArray(o.history)?o.history:[]}; }
 migrateLegacy();
 
 function scopedKey(base){ return `${base}:${currentUser?.user||'guest'}`; }
@@ -236,8 +353,24 @@ function openOrder(order=null){editingOrderId=order?.id||null; const o=order||{c
  $('#orderForm').onsubmit=e=>{e.preventDefault();saveOrder(o);}; }
 function saveOrder(existing){const was=existing?.status; const data={client:$('#orderClient').value.trim(),project:$('#orderProject').value.trim(),deadline:$('#orderDeadline').value,value:Number($('#orderValue').value)||0,type:$('#orderType').value,status:$('#orderStatus').value,priority:$('#orderPriority').value,briefing:{...(existing?.briefing||{}),notes:$('#orderNotes').value},files:existing?.files||[],origin:existing?.origin||'Manual',paid:existing?.paid||false};if(!data.client||!data.project){toast('Cliente e projeto são obrigatórios.','error');return;}if(existing){Object.assign(existing,data); if(existing.status==='Pago')existing.paid=true; if(was!==existing.status)addHistory(existing,`Status alterado de ${was} para ${existing.status}`);}else{const o={id:uid('ord'),...data,created:todayISO(),history:[]};addHistory(o,'Pedido criado');orders.unshift(o);notify('Novo pedido criado',`${data.project} • ${data.client}`,'success','pedidos',o.id);}persist();closeModal();render();go('pedidos');toast(existing?'Pedido atualizado.':'Pedido criado.');}
 function addHistory(o,text){o.history=o.history||[];o.history.unshift({id:uid('hist'),at:new Date().toISOString(),text});}
-function openOrderView(id){const o=orders.find(x=>x.id===id);if(!o)return; const b=o.briefing||{}; modal(`<div class="modal-head"><div><span class="eyebrow">DETALHES DO PEDIDO</span><h2>${esc(o.project)}</h2><p class="muted">${esc(o.client)} • ${esc(o.type)}</p></div><button class="close-modal" data-close-modal>×</button></div><div class="detail-top"><span class="status-pill ${statusClass(o.status)}">${esc(o.status)}</span><div class="detail-actions"><button class="btn secondary" data-edit-order="${o.id}">Editar</button><button class="btn secondary" data-order-pdf="${o.id}">PDF</button><button class="btn primary" data-cycle-status="${o.id}">Avançar status</button></div></div><div class="status-flow">${STATUS.map((s,i)=>`<span class="flow-step ${STATUS.indexOf(o.status)>=i?'done':''}"><i>${STATUS.indexOf(o.status)>=i?'✓':i+1}</i>${s}</span>`).join('')}</div><div class="detail-grid"><div class="detail-card"><b>Resumo</b><dl><div><dt>Cliente</dt><dd>${esc(o.client)}</dd></div><div><dt>Prazo</dt><dd>${dateLabel(o.deadline)}</dd></div><div><dt>Valor</dt><dd>${money(o.value)}</dd></div><div><dt>Pagamento</dt><dd>${o.paid||o.status==='Pago'?'Pago':'Pendente'}</dd></div></dl></div><div class="detail-card"><b>Briefing</b><p class="detail-text">${esc(b.texts||b.notes||'Nenhuma informação adicional registrada.')}</p>${b.refs?`<div class="ref-box"><b>Referências</b><p>${esc(b.refs)}</p></div>`:''}</div></div><div class="detail-card full-detail"><div class="detail-card-head"><b>Arquivos enviados pelo cliente</b><small>${(o.files||[]).length} arquivo(s)</small></div><div id="orderFiles" class="file-gallery">${renderFileGallery(o)}</div></div><div class="detail-card full-detail"><div class="detail-card-head"><b>Histórico</b><small>Atividades do pedido</small></div><div class="history">${(o.history||[]).map(h=>`<div><span></span><p><b>${esc(h.text)}</b><small>${new Date(h.at).toLocaleString('pt-BR')}</small></p></div>`).join('')||'<p class="muted">Sem histórico.</p>'}</div></div><div class="modal-actions"><button class="btn danger-btn" data-delete-order="${o.id}">Excluir pedido</button><button class="btn secondary" data-toggle-paid="${o.id}">${o.paid?'Marcar como pendente':'Marcar como pago'}</button></div>`); }
-function renderFileGallery(o){if(!o.files?.length)return`<div class="empty-mini center"><span>↑</span><div><b>Nenhum arquivo anexado.</b><small>Arquivos enviados pelo cliente aparecerão aqui.</small></div></div>`;return o.files.map((f,i)=>`<div class="file-tile">${f.dataUrl&&f.type?.startsWith('image/')?`<img src="${f.dataUrl}" alt="${esc(f.name)}" data-preview-file="${o.id}:${i}">`:`<div class="file-generic">PDF</div>`}<div><b title="${esc(f.name)}">${esc(f.name)}</b><small>${formatBytes(f.size||0)}</small></div><button class="btn secondary small" data-download-file="${o.id}:${i}">↓ Baixar original</button></div>`).join('');}
+function openOrderView(id){const o=orders.find(x=>x.id===id);if(!o)return; const b=o.briefing||{}; modal(`<div class="modal-head"><div><span class="eyebrow">DETALHES DO PEDIDO</span><h2>${esc(o.project)}</h2><p class="muted">${esc(o.client)} • ${esc(o.type)}</p></div><button class="close-modal" data-close-modal>×</button></div><div class="detail-top"><span class="status-pill ${statusClass(o.status)}">${esc(o.status)}</span><div class="detail-actions"><button class="btn secondary" data-edit-order="${o.id}">Editar</button><button class="btn secondary" data-order-pdf="${o.id}">PDF</button><button class="btn primary" data-cycle-status="${o.id}">Avançar status</button></div></div><div class="status-flow">${STATUS.map((s,i)=>`<span class="flow-step ${STATUS.indexOf(o.status)>=i?'done':''}"><i>${STATUS.indexOf(o.status)>=i?'✓':i+1}</i>${s}</span>`).join('')}</div><div class="detail-grid"><div class="detail-card"><b>Resumo</b><dl><div><dt>Cliente</dt><dd>${esc(o.client)}</dd></div><div><dt>Prazo</dt><dd>${dateLabel(o.deadline)}</dd></div><div><dt>Valor</dt><dd>${money(o.value)}</dd></div><div><dt>Pagamento</dt><dd>${o.paid||o.status==='Pago'?'Pago':'Pendente'}</dd></div></dl></div><div class="detail-card"><b>Briefing</b><p class="detail-text">${esc(b.texts||b.notes||'Nenhuma informação adicional registrada.')}</p>${b.refs?`<div class="ref-box"><b>Referências</b><p>${esc(b.refs)}</p></div>`:''}</div></div><div class="detail-card full-detail"><div class="detail-card-head"><b>Arquivos enviados pelo cliente</b><small>${(o.files||[]).length} arquivo(s)</small></div><div id="orderFiles" class="file-gallery">${renderFileGallery(o)}</div></div><div class="detail-card full-detail"><div class="detail-card-head"><b>Pessoas e fotos para a arte</b><small>${Array.isArray(b.people)?b.people.length:0} pessoa(s)</small></div><div class="file-gallery">${renderPeopleGallery(o)}</div></div><div class="detail-card full-detail"><div class="detail-card-head"><b>Histórico</b><small>Atividades do pedido</small></div><div class="history">${(o.history||[]).map(h=>`<div><span></span><p><b>${esc(h.text)}</b><small>${new Date(h.at).toLocaleString('pt-BR')}</small></p></div>`).join('')||'<p class="muted">Sem histórico.</p>'}</div></div><div class="modal-actions"><button class="btn danger-btn" data-delete-order="${o.id}">Excluir pedido</button><button class="btn secondary" data-toggle-paid="${o.id}">${o.paid?'Marcar como pendente':'Marcar como pago'}</button></div>`); }
+function renderFileGallery(o){
+  if(!o.files?.length)return`<div class="empty-mini center"><span>↑</span><div><b>Nenhum arquivo anexado.</b><small>Arquivos enviados pelo cliente aparecerão aqui.</small></div></div>`;
+  return o.files.map((f,i)=>{
+    const src=f.dataUrl||f.url||'';
+    const isImage=f.type?.startsWith('image/');
+    return `<div class="file-tile">${isImage&&src?`<img src="${esc(src)}" alt="${esc(f.name)}" data-preview-file="${o.id}:${i}" onerror="this.style.display='none'">`:`<div class="file-generic">${esc((f.type||'arquivo').split('/').pop()?.toUpperCase()||'ARQUIVO')}</div>`}<div><b title="${esc(f.name)}">${esc(f.name)}</b><small>${formatBytes(f.size||0)}</small></div><button class="btn secondary small" data-download-file="${o.id}:${i}">↓ Abrir original</button></div>`;
+  }).join('');
+}
+function renderPeopleGallery(o){
+  const people=Array.isArray(o.briefing?.people)?o.briefing.people:[];
+  const withPhotos=people.map((p,i)=>({p,i,photo:p?.photo})).filter(x=>x.photo?.url||x.photo?.dataUrl);
+  if(!withPhotos.length)return`<div class="empty-mini center"><span>👤</span><div><b>Nenhuma foto de pessoa enviada.</b><small>As fotos adicionadas pelo cliente aparecerão aqui.</small></div></div>`;
+  return withPhotos.map(({p,i,photo})=>{
+    const src=photo.url||photo.dataUrl;
+    return `<div class="file-tile"><img src="${esc(src)}" alt="${esc(p.name||`Pessoa ${i+1}`)}"><div><b>${esc(p.name||`Pessoa ${i+1}`)}</b><small>${esc(p.info||'Foto para a arte')}</small></div><a class="btn secondary small" href="${esc(src)}" target="_blank" rel="noopener">Abrir original</a></div>`;
+  }).join('');
+}
 function formatBytes(n){if(!n)return'arquivo';const u=['B','KB','MB','GB'];let i=0,x=n;while(x>=1024&&i<u.length-1){x/=1024;i++;}return`${x.toFixed(i?1:0)} ${u[i]}`;}
 function cycleStatus(id){const o=orders.find(x=>x.id===id);if(!o)return;const i=STATUS.indexOf(o.status);const next=STATUS[Math.min(i+1,STATUS.length-1)];if(next===o.status){toast('O pedido já está no status final.','info');return;}const old=o.status;o.status=next;if(next==='Pago')o.paid=true;addHistory(o,`Status alterado de ${old} para ${next}`);persist();render();closeModal();notify(`Status atualizado: ${next}`,`${o.project} • ${o.client}`,'info','pedidos',o.id);toast(`Pedido movido para ${next}.`);}
 function togglePaid(id){const o=orders.find(x=>x.id===id);if(!o)return;o.paid=!o.paid;if(o.paid){o.status='Pago';addHistory(o,'Pagamento recebido');notify('Pagamento recebido',`${o.project} • ${money(o.value)}`,'success','pedidos',o.id);}else{if(o.status==='Pago')o.status='Entregue';addHistory(o,'Pagamento marcado como pendente');}persist();render();toast(o.paid?'Pagamento registrado.':'Pagamento desmarcado.');}
@@ -324,7 +457,7 @@ function handleDelegated(e){const a=e.target.closest('[data-action]');if(a){cons
  const pdfQ=e.target.closest('[data-quote-pdf]');if(pdfQ)generateQuotePDF(pdfQ.dataset.quotePdf);
  const copy=e.target.closest('[data-copy-text]');if(copy)copyText(copy.dataset.copyText);
  const notif=e.target.closest('[data-notification]');if(notif){const n=notifications.find(x=>x.id===notif.dataset.notification);if(n){n.read=true;persist();renderNotifications();if(n.linkId)openOrderView(n.linkId);}}
- const dl=e.target.closest('[data-download-file]');if(dl){const [oid,idx]=dl.dataset.downloadFile.split(':');const o=orders.find(x=>x.id===oid),f=o?.files?.[Number(idx)];if(f?.dataUrl){const a=document.createElement('a');a.href=f.dataUrl;a.download=f.name;document.body.appendChild(a);a.click();a.remove();}else toast('Arquivo original não está disponível neste armazenamento local.','error');}
+ const dl=e.target.closest('[data-download-file]');if(dl){const [oid,idx]=dl.dataset.downloadFile.split(':');const o=orders.find(x=>x.id===oid),f=o?.files?.[Number(idx)];if(f?.dataUrl){const a=document.createElement('a');a.href=f.dataUrl;a.download=f.name||'arquivo';document.body.appendChild(a);a.click();a.remove();}else if(f?.url){window.open(f.url,'_blank','noopener,noreferrer');}else toast('Arquivo original não possui uma URL disponível.','error');}
  const preview=e.target.closest('[data-preview-file]');if(preview)modal(`<div class="image-modal"><button class="close-modal" data-close-modal>×</button><img src="${preview.src}" alt="Pré-visualização"></div>`);
  const tab=e.target.closest('#orderTabs button');if(tab){orderFilter=tab.dataset.filter;renderOrders();}
   const closeButton=e.target.closest('.close-modal,[data-close-modal]');if(closeButton)closeModal();
