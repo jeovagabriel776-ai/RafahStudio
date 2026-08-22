@@ -15,7 +15,25 @@ const uid = p => `${p}_${Date.now().toString(36)}_${Math.random().toString(36).s
 // Supabase - briefing online
 const SUPABASE_URL = 'https://jnazqhxptrtearaocvpx.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_TumK-xOT32ZdrtWfIYLI8g_VsSTEsve';
-const supabaseClient = window.supabase?.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+
+// O RafahStudio usa a Publishable Key no navegador. Ela é segura para frontend
+// quando o acesso aos dados é protegido pelas funções/RLS do Supabase.
+let supabaseClient = null;
+function initSupabaseClient(){
+  try{
+    if(!window.supabase?.createClient){
+      console.error('[RafahStudio] Biblioteca Supabase não encontrada.');
+      return false;
+    }
+    supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+    return !!supabaseClient;
+  }catch(err){
+    console.error('[RafahStudio] Falha ao inicializar Supabase:', err);
+    supabaseClient = null;
+    return false;
+  }
+}
+initSupabaseClient();
 const ownerTokenKey = user => `${APP}:owner-token:${user||'default'}`;
 const publicTokenKey = user => `${APP}:public-token:${user||'default'}`;
 function randomToken(){return (crypto.randomUUID?.()||uid('tok'))+'-'+Math.random().toString(36).slice(2)+Date.now().toString(36);}
@@ -32,10 +50,40 @@ async function uploadBriefingFile(file, publicToken, briefingId, index){
   return {name:file.name,type:file.type,size:file.size,path,url:data.publicUrl};
 }
 async function ensurePublicLink(){
-  if(!supabaseClient||!currentUser)return false;
-  const {error}=await supabaseClient.rpc('register_briefing_link',{p_public_token:getPublicToken(),p_owner_secret:getOwnerToken()});
-  if(error){console.error('RafahStudio link:',error);return false;}
-  return true;
+  if(!supabaseClient){
+    initSupabaseClient();
+    if(!supabaseClient){
+      toast('Não foi possível conectar ao servidor de briefings. Verifique sua internet.','error');
+      return false;
+    }
+  }
+  if(!currentUser){
+    toast('Entre na sua conta antes de gerar o briefing.','error');
+    return false;
+  }
+
+  const publicToken=getPublicToken();
+  const ownerSecret=getOwnerToken();
+
+  try{
+    const {error}=await supabaseClient.rpc('register_briefing_link',{
+      p_public_token:publicToken,
+      p_owner_secret:ownerSecret
+    });
+
+    if(error){
+      console.error('[RafahStudio] register_briefing_link:', error);
+      const msg=error.message || error.details || 'Erro desconhecido no Supabase.';
+      toast(`Supabase: ${msg}`,'error');
+      return false;
+    }
+
+    return true;
+  }catch(err){
+    console.error('[RafahStudio] Erro inesperado ao registrar briefing:',err);
+    toast(`Não foi possível registrar o briefing: ${err?.message||'erro de conexão'}`,'error');
+    return false;
+  }
 }
 async function syncOnlineBriefings(){
   if(!supabaseClient||!currentUser)return;
@@ -204,9 +252,23 @@ function deleteQuote(id){const q=quotes.find(x=>x.id===id);if(!q)return;if(!conf
 function quoteToOrder(id){const q=quotes.find(x=>x.id===id);if(!q)return;const o={id:uid('ord'),client:q.client,project:q.project,deadline:q.valid,value:q.total,type:'Orçamento convertido',status:'Novo',priority:'Normal',created:todayISO(),paid:false,origin:'Orçamento',briefing:{notes:q.terms},files:[],history:[]};addHistory(o,'Pedido criado a partir do orçamento');orders.unshift(o);q.status='Aprovado';persist();render();closeModal();go('pedidos');notify('Orçamento convertido em pedido',`${q.project} • ${q.client}`,'success','pedidos',o.id);toast('Pedido criado a partir do orçamento.');}
 
 async function generateLink(){
- if(!supabaseClient){toast('Supabase não carregou. Atualize a página.','error');return '';}
- if(!(await ensurePublicLink())){toast('Não foi possível preparar o link de briefing.','error');return '';}
- const payload={v:4,designer:designer.name||'Designer',publicToken:getPublicToken()}; const encoded=btoa(unescape(encodeURIComponent(JSON.stringify(payload)))); const url=`${location.href.split('#')[0]}#briefing=${encoded}`; $('#briefingLinkBox').classList.remove('hidden'); $('#briefingLinkBox').innerHTML=`<div><b>Seu link de briefing</b><small>Envie este link ao cliente. O formulário não mostra valores.</small><code>${esc(url)}</code></div><button class="btn primary" data-copy-text="${esc(url)}">Copiar link</button>`; return url;
+  if(!(await ensurePublicLink())) return '';
+
+  const payload={
+    v:5,
+    designer:designer.name||'Designer',
+    publicToken:getPublicToken()
+  };
+  const encoded=btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+  const baseUrl=location.href.split('#')[0];
+  const url=`${baseUrl}#briefing=${encoded}`;
+
+  $('#briefingLinkBox').classList.remove('hidden');
+  $('#briefingLinkBox').innerHTML=
+    `<div><b>Seu link de briefing</b><small>Envie este link ao cliente. O formulário não mostra valores.</small><code>${esc(url)}</code></div>`+
+    `<button type="button" class="btn primary" data-copy-text="${esc(url)}">Copiar link</button>`;
+
+  return url;
 }
 function copyText(text){navigator.clipboard?.writeText(text).then(()=>toast('Link copiado.')).catch(()=>{const ta=document.createElement('textarea');ta.value=text;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();toast('Link copiado.');});}
 function openPublic(){ $('#authScreen').classList.add('hidden');$('#app').classList.add('hidden');$('#publicPage').classList.remove('hidden'); }
@@ -215,7 +277,8 @@ async function readFiles(fileList){const arr=[];for(const f of [...fileList]){if
 function setupPublic(){let people=[];function paintPeople(){ $('#peopleList').innerHTML=people.map((p,i)=>`<div class="person-row"><div class="person-num">${i+1}</div><label>Nome<input data-person-name="${i}" value="${esc(p.name)}" required></label><label>Participação / informação<input data-person-info="${i}" value="${esc(p.info)}"></label><label class="person-photo">Foto<input data-person-photo="${i}" type="file" accept="image/*"><small>${p.photo?.name||'Opcional'}</small></label><button type="button" class="icon-action danger" data-remove-person="${i}">×</button></div>`).join('');}
  $('#addPersonBtn').onclick=()=>{people.push({name:'',info:'',photo:null});paintPeople();}; $('#peopleList').addEventListener('input',e=>{const i=e.target.dataset.personName??e.target.dataset.personInfo;if(i!==undefined){if(e.target.dataset.personName!==undefined)people[i].name=e.target.value;else people[i].info=e.target.value;}});$('#peopleList').addEventListener('change',async e=>{const i=e.target.dataset.personPhoto;if(i!==undefined&&e.target.files[0])people[i].photo=(await readFiles(e.target.files))[0];});$('#peopleList').addEventListener('click',e=>{const b=e.target.closest('[data-remove-person]');if(b){people.splice(Number(b.dataset.removePerson),1);paintPeople();}});$('#pubFiles').addEventListener('change',async e=>{const fs=await readFiles(e.target.files);$('#filePreview').innerHTML=fs.map(f=>`<span>${esc(f.name)} <small>${formatBytes(f.size)}</small></span>`).join('');$('#pubFiles')._files=fs;});
  $('#briefingForm').onsubmit=async e=>{e.preventDefault();
-   if(!supabaseClient){$('#publicMessage').textContent='Não foi possível enviar agora. A biblioteca do Supabase não carregou. Verifique sua conexão e atualize a página.';return;}
+   if(!supabaseClient) initSupabaseClient();
+   if(!supabaseClient){$('#publicMessage').textContent='Não foi possível conectar ao servidor. Verifique sua internet e atualize a página.';return;}
    const publicToken=briefingTokenFromHash(); if(!publicToken){$('#publicMessage').textContent='Link de briefing inválido ou expirado. Solicite um novo link ao designer.';return;}
    const files=$('#pubFiles')._files||[];const persons=people.map(p=>({name:p.name,info:p.info,photo:p.photo?{name:p.photo.name,type:p.photo.type,size:p.photo.size}:null}));
    const d={client:$('#pubName').value.trim(),whats:$('#pubWhats').value.trim(),project:$('#pubProject').value.trim(),deadline:$('#pubEvent').value,type:$('#pubType').value,texts:$('#pubTexts').value,people:persons,refs:$('#pubRefs').value,notes:$('#pubNotes').value};
