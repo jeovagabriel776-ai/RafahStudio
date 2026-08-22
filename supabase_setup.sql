@@ -112,7 +112,9 @@ with check (bucket_id = 'briefing-files');
 
 
 -- RAFAHSTUDIO — CATÁLOGO DE REFERÊNCIAS
--- Execute este bloco após o SQL original para habilitar o catálogo público.
+-- CORREÇÃO: remove versões anteriores das funções para evitar
+-- incompatibilidade de nomes/ordem dos parâmetros no schema cache do Supabase.
+
 create table if not exists public.catalog_items (
   id uuid primary key default gen_random_uuid(),
   owner_secret text not null,
@@ -124,48 +126,86 @@ create table if not exists public.catalog_items (
 create index if not exists catalog_items_owner_idx on public.catalog_items(owner_secret);
 create index if not exists catalog_items_created_idx on public.catalog_items(created_at desc);
 alter table public.catalog_items enable row level security;
-drop policy if exists "public_read_catalog_items" on public.catalog_items;
-drop policy if exists "public_insert_catalog_items" on public.catalog_items;
-drop policy if exists "public_update_catalog_items" on public.catalog_items;
-drop policy if exists "public_delete_catalog_items" on public.catalog_items;
 
-create or replace function public.create_catalog_item(p_owner_secret text,p_title text,p_description text,p_image_url text)
-returns uuid language plpgsql security definer set search_path=public as $$
+drop function if exists public.create_catalog_item(text,text,text,text);
+drop function if exists public.update_catalog_item(text,uuid,text,text,text);
+drop function if exists public.delete_catalog_item(text,uuid);
+drop function if exists public.get_catalog_for_owner(text);
+drop function if exists public.get_catalog_for_public(text);
+
+create or replace function public.create_catalog_item(
+  p_owner_secret text,
+  p_title text,
+  p_description text,
+  p_image_url text
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
 declare v_id uuid;
 begin
   if length(coalesce(p_owner_secret,'')) < 20 then raise exception 'Segredo inválido'; end if;
   if length(trim(coalesce(p_title,''))) < 1 then raise exception 'Título obrigatório'; end if;
   if length(trim(coalesce(p_image_url,''))) < 5 then raise exception 'Imagem obrigatória'; end if;
   insert into public.catalog_items(owner_secret,title,description,image_url)
-  values(p_owner_secret,trim(p_title),nullif(trim(p_description),''),trim(p_image_url)) returning id into v_id;
+  values(p_owner_secret,trim(p_title),nullif(trim(p_description),''),trim(p_image_url))
+  returning id into v_id;
   return v_id;
-end; $$;
+end;
+$$;
 
-create or replace function public.update_catalog_item(p_owner_secret text,p_id uuid,p_title text,p_description text,p_image_url text)
-returns void language plpgsql security definer set search_path=public as $$
+create or replace function public.update_catalog_item(
+  p_owner_secret text,
+  p_id uuid,
+  p_title text,
+  p_description text,
+  p_image_url text
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
 begin
-  update public.catalog_items set title=trim(p_title),description=nullif(trim(p_description),''),image_url=trim(p_image_url)
+  update public.catalog_items
+  set title=trim(p_title), description=nullif(trim(p_description),''), image_url=trim(p_image_url)
   where id=p_id and owner_secret=p_owner_secret;
   if not found then raise exception 'Item do catálogo não encontrado'; end if;
-end; $$;
+end;
+$$;
 
 create or replace function public.delete_catalog_item(p_owner_secret text,p_id uuid)
-returns void language plpgsql security definer set search_path=public as $$
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
 begin
   delete from public.catalog_items where id=p_id and owner_secret=p_owner_secret;
   if not found then raise exception 'Item do catálogo não encontrado'; end if;
-end; $$;
+end;
+$$;
 
 create or replace function public.get_catalog_for_owner(p_owner_secret text)
 returns table(id uuid,title text,description text,image_url text,created_at timestamptz)
-language sql security definer set search_path=public as $$
+language sql
+security definer
+set search_path = public
+as $$
   select c.id,c.title,c.description,c.image_url,c.created_at
-  from public.catalog_items c where c.owner_secret=p_owner_secret order by c.created_at desc;
+  from public.catalog_items c
+  where c.owner_secret=p_owner_secret
+  order by c.created_at desc;
 $$;
 
 create or replace function public.get_catalog_for_public(p_public_token text)
 returns table(id uuid,title text,description text,image_url text,created_at timestamptz)
-language sql security definer set search_path=public as $$
+language sql
+security definer
+set search_path = public
+as $$
   select c.id,c.title,c.description,c.image_url,c.created_at
   from public.catalog_items c
   join public.briefing_links l on l.owner_secret=c.owner_secret
