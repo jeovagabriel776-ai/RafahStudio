@@ -70,3 +70,45 @@ body.modal-open{overflow:hidden}
 .public-page .success-icon{background:var(--pub-soft);color:var(--pub-accent)}
 .public-page .public-success .btn{background:var(--pub-surface);color:var(--pub-ink);border-color:var(--pub-line)}
 @media(max-width:560px){.public-tools{gap:5px}.public-theme-btn{padding:0 9px}.public-theme-btn span:last-child{display:none}}
+
+/* Pedidos em etapas — quadro horizontal */
+.orders-board-wrap{overflow:hidden!important;padding:14px!important}
+.orders-board{display:flex;gap:14px;overflow-x:auto;overflow-y:hidden;padding:2px 2px 12px;scroll-snap-type:x proximity}
+.orders-board::-webkit-scrollbar{height:9px}
+.orders-board::-webkit-scrollbar-thumb{background:var(--line);border-radius:99px}
+.order-stage{flex:0 0 min(330px,82vw);min-height:420px;background:var(--surface-2);border:1px solid var(--line);border-radius:16px;display:flex;flex-direction:column;scroll-snap-align:start}
+.order-stage-head{padding:14px;border-bottom:1px solid var(--line);background:var(--surface);border-radius:16px 16px 0 0}
+.order-stage-head>div{display:flex;align-items:center;gap:8px}
+.order-stage-head b{font:800 12px Manrope,sans-serif}
+.order-stage-head em{font-style:normal;font-size:9px;background:var(--surface-2);border:1px solid var(--line);padding:3px 7px;border-radius:99px}
+.order-stage-head small{display:block;color:var(--muted);font-size:8px;margin-top:4px;padding-left:15px}
+.status-dot{width:8px;height:8px;border-radius:50%;display:inline-block;background:var(--muted)}
+.status-dot.status-new{background:#55a58c}.status-dot.status-doing{background:#6f91c9}.status-dot.status-wait{background:#9a7bd1}.status-dot.status-change{background:#d39b5d}.status-dot.status-done{background:#5baf78}.status-dot.status-paid{background:#4d9c91}
+.order-stage-body{padding:10px;display:grid;gap:10px;align-content:start;overflow:auto;max-height:calc(100vh - 330px)}
+.order-card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px;box-shadow:0 8px 20px #13201d08}
+.order-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+.order-card .project-cell{min-width:0}
+.order-card .project-cell>div{min-width:0}
+.order-card .project-cell b,.order-card .project-cell small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.order-card .project-cell b{font-size:10px}
+.order-card .project-cell small{font-size:8px;color:var(--muted);margin-top:2px}
+.order-card-meta{display:flex;gap:8px;align-items:center;justify-content:space-between;margin:12px 0 6px;padding-top:9px;border-top:1px solid var(--line);font-size:8px;color:var(--muted)}
+.order-card-meta strong{color:var(--ink);font-size:9px}
+.online-badge{display:inline-block;font-size:7px;color:var(--accent);background:color-mix(in srgb,var(--accent) 10%,transparent);padding:4px 7px;border-radius:99px;margin-top:3px}
+.order-card-actions{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:10px}
+.order-card-actions .small{padding:7px 10px;font-size:8px}
+.order-card-actions .icon-action{width:30px;height:30px}
+.order-card-actions .icon-action:disabled{opacity:.3;cursor:not-allowed;transform:none}
+.stage-empty{border:1px dashed var(--line);border-radius:12px;padding:25px 12px;text-align:center;color:var(--muted);font-size:9px}
+.trash-list{display:grid;gap:8px}
+.trash-row{display:grid;grid-template-columns:1fr auto auto auto;gap:9px;align-items:center;padding:11px;border:1px solid var(--line);background:var(--surface-2);border-radius:12px}
+.trash-row b,.trash-row small{display:block}
+.trash-row b{font-size:10px}
+.trash-row small{font-size:8px;color:var(--muted);margin-top:2px}
+@media(max-width:800px){
+ .orders-board-wrap{margin:0 -2px}
+ .order-stage{flex-basis:300px}
+ .order-stage-body{max-height:55vh}
+ .trash-row{grid-template-columns:1fr auto}
+ .trash-row .status-pill{display:none}
+}

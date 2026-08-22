@@ -2,7 +2,7 @@
 const $ = (s, root=document) => root.querySelector(s);
 const $$ = (s, root=document) => [...root.querySelectorAll(s)];
 const APP = 'rafahstudio';
-const KEYS = { accounts:`${APP}:accounts`, user:`${APP}:user`, theme:`${APP}:theme`, designer:`${APP}:designer`, orders:`${APP}:orders`, clients:`${APP}:clients`, quotes:`${APP}:quotes`, notifications:`${APP}:notifications` };
+const KEYS = { accounts:`${APP}:accounts`, user:`${APP}:user`, theme:`${APP}:theme`, designer:`${APP}:designer`, orders:`${APP}:orders`, clients:`${APP}:clients`, quotes:`${APP}:quotes`, notifications:`${APP}:notifications`, trash:`${APP}:trash`, deletedRemote:`${APP}:deleted-remote` };
 const STATUS = ['Novo','Em andamento','Esperando aprovação','Alteração','Entregue','Pago'];
 const QUOTE_STATUS = ['Rascunho','Enviado','Aprovado','Recusado'];
 const todayISO = () => new Date().toISOString().slice(0,10);
@@ -87,18 +87,10 @@ async function ensurePublicLink(){
 }
 let onlineBriefingSyncRunning=false;
 function onlineBriefingFingerprint(b){
-  return [
-    String(b.client_name||'').trim().toLowerCase(),
-    String(b.project_name||'').trim().toLowerCase(),
-    String(b.created_at||'').slice(0,10)
-  ].join('|');
+  return [String(b.client_name||'').trim().toLowerCase(),String(b.project_name||'').trim().toLowerCase(),String(b.created_at||'').slice(0,10)].join('|');
 }
 function orderFingerprint(o){
-  return [
-    String(o.client||'').trim().toLowerCase(),
-    String(o.project||'').trim().toLowerCase(),
-    String(o.created||'').slice(0,10)
-  ].join('|');
+  return [String(o.client||'').trim().toLowerCase(),String(o.project||'').trim().toLowerCase(),String(o.created||'').slice(0,10)].join('|');
 }
 async function syncOnlineBriefings(){
   if(!supabaseClient||!currentUser||onlineBriefingSyncRunning)return;
@@ -121,6 +113,18 @@ async function syncOnlineBriefings(){
 
     for(const b of (data||[])){
       const remoteKey=String(b.id);
+
+      // Um pedido excluído pelo designer não pode voltar apenas porque o
+      // briefing original ainda existe no Supabase. O ID remoto fica em
+      // uma "lista de exclusão" local (tombstone).
+      if(deletedRemoteIds.includes(remoteKey)){
+        if(byRemote.has(remoteKey)){
+          orders=orders.filter(x=>String(x.remoteId)!==remoteKey);
+          changed=true;
+        }
+        continue;
+      }
+
       let o=byRemote.get(remoteKey);
 
       // Compatibilidade com pedidos antigos que foram criados antes do remoteId
@@ -150,12 +154,13 @@ async function syncOnlineBriefings(){
         // Atualiza somente os dados que vêm do formulário. Não sobrescreve
         // valor, status, prioridade ou outras edições feitas pelo designer.
         o.remoteId=b.id;
+        o.remoteCreated=b.created_at||o.remoteCreated||'';
         o.origin='Briefing online';
         o.client=b.client_name||o.client||'';
         o.project=b.project_name||o.project||'Sem projeto';
         o.deadline=b.deadline||o.deadline||'';
         o.type=b.service_type||o.type||'Outro';
-        o.briefing=briefing;
+        o.briefing={...(o.briefing||{}),...briefing};
         o.files=files;
         o.created=o.created||b.created_at?.slice(0,10)||todayISO();
         byRemote.set(remoteKey,o);
@@ -164,6 +169,7 @@ async function syncOnlineBriefings(){
         o={
           id:uid('ord'),
           remoteId:b.id,
+          remoteCreated:b.created_at||'',
           client:b.client_name||'',
           project:b.project_name||'Sem projeto',
           deadline:b.deadline||'',
@@ -229,6 +235,8 @@ let orders = read(KEYS.orders, []);
 let clients = read(KEYS.clients, []);
 let quotes = read(KEYS.quotes, []);
 let notifications = read(KEYS.notifications, []);
+let trash = read(KEYS.trash, []);
+let deletedRemoteIds = read(KEYS.deletedRemote, []);
 let orderFilter = 'all', editingOrderId=null, editingClientId=null, editingQuoteId=null;
 
 // Migração do projeto antigo: preserva o que já existe e normaliza os status.
@@ -247,7 +255,7 @@ function normalizeStatus(s){
   if(s==='Pago') return 'Pago';
   return STATUS.includes(s)?s:'Novo';
 }
-function normalizeOrder(o){ return {id:o.id||uid('ord'),remoteId:o.remoteId||'',client:o.client||'',project:o.project||'Sem projeto',deadline:o.deadline||'',value:Number(o.value)||0,type:o.type||'Outro',status:normalizeStatus(o.status),created:o.created||todayISO(),paid:Boolean(o.paid||o.status==='Pago'),origin:o.origin||'Manual',priority:o.priority||'Normal',briefing:o.briefing||{},files:Array.isArray(o.files)?o.files:[],history:Array.isArray(o.history)?o.history:[]}; }
+function normalizeOrder(o){ return {id:o.id||uid('ord'),remoteId:o.remoteId||'',remoteCreated:o.remoteCreated||'',client:o.client||'',project:o.project||'Sem projeto',deadline:o.deadline||'',value:Number(o.value)||0,type:o.type||'Outro',status:normalizeStatus(o.status),created:o.created||todayISO(),paid:Boolean(o.paid||o.status==='Pago'),origin:o.origin||'Manual',priority:o.priority||'Normal',briefing:o.briefing||{},files:Array.isArray(o.files)?o.files:[],history:Array.isArray(o.history)?o.history:[]}; }
 migrateLegacy();
 
 function scopedKey(base){ return `${base}:${currentUser?.user||'guest'}`; }
@@ -258,10 +266,12 @@ function loadScoped(){
   clients=read(scopedKey('rafahstudio:clients'), oldClients);
   quotes=read(scopedKey('rafahstudio:quotes'), oldQuotes);
   notifications=read(scopedKey('rafahstudio:notifications'), notifications);
+  trash=read(scopedKey('rafahstudio:trash'), []);
+  deletedRemoteIds=read(scopedKey('rafahstudio:deletedRemote'), []);
   const p=read(scopedKey('rafahstudio:designer'), null); if(p) designer={...designer,...p};
 }
 function persist(){
-  if(currentUser){ write(scopedKey('rafahstudio:orders'),orders); write(scopedKey('rafahstudio:clients'),clients); write(scopedKey('rafahstudio:quotes'),quotes); write(scopedKey('rafahstudio:notifications'),notifications); write(scopedKey('rafahstudio:designer'),designer); }
+  if(currentUser){ write(scopedKey('rafahstudio:orders'),orders); write(scopedKey('rafahstudio:clients'),clients); write(scopedKey('rafahstudio:quotes'),quotes); write(scopedKey('rafahstudio:notifications'),notifications); write(scopedKey('rafahstudio:designer'),designer); write(scopedKey('rafahstudio:trash'),trash); write(scopedKey('rafahstudio:deletedRemote'),deletedRemoteIds); }
   write(KEYS.accounts,accounts); write(KEYS.user,currentUser);
 }
 
@@ -317,10 +327,58 @@ function filteredOrders(){
  const sort=$('#orderSort')?.value||'recent'; list.sort((a,b)=>sort==='deadline'?(a.deadline||'9999').localeCompare(b.deadline||'9999'):sort==='value'?b.value-a.value:sort==='oldest'?a.created.localeCompare(b.created):b.created.localeCompare(a.created)); return list;
 }
 function renderOrders(){
- const counts={all:orders.length,Novo:0,'Em andamento':0,'Esperando aprovação':0,'Alteração':0,Entregue:0,Pago:0}; orders.forEach(o=>counts[o.status]=(counts[o.status]||0)+1);
+ const counts={all:orders.length,Novo:0,'Em andamento':0,'Esperando aprovação':0,'Alteração':0,Entregue:0,Pago:0};
+ orders.forEach(o=>counts[o.status]=(counts[o.status]||0)+1);
  $('#countAll').textContent=counts.all; $('#countNovo').textContent=counts.Novo; $('#countDoing').textContent=counts['Em andamento']; $('#countApproval').textContent=counts['Esperando aprovação']; $('#countChange').textContent=counts['Alteração']; $('#countDelivered').textContent=counts.Entregue; $('#countPaid').textContent=counts.Pago;
  $$('#orderTabs button').forEach(b=>b.classList.toggle('active',b.dataset.filter===orderFilter));
- const list=filteredOrders(); $('#ordersTable').innerHTML=list.map(o=>`<div class="table-row order-row"><div class="project-cell"><span class="project-mark">${esc(initials(o.project))}</span><div><b>${esc(o.project)}</b><small>${esc(o.type)} ${o.origin==='Briefing online'?'• Briefing online':''}</small></div></div><div>${esc(o.client)}</div><div><span class="date-main">${dateLabel(o.deadline)}</span>${o.priority!=='Normal'?`<small class="priority ${priorityClass(o.priority)}">${esc(o.priority)}</small>`:''}</div><div><span class="status-pill ${statusClass(o.status)}">${esc(o.status)}</span></div><div>${money(o.value)}</div><div class="row-actions"><button class="icon-action" title="Abrir" data-open-order="${o.id}">↗</button><button class="icon-action" title="PDF" data-order-pdf="${o.id}">▣</button><button class="icon-action danger" title="Excluir" data-delete-order="${o.id}">×</button></div></div>`).join('')||`<div class="empty-state"><span>▤</span><h3>Nenhum pedido encontrado</h3><p>Crie um pedido ou envie seu link de briefing para começar.</p><button class="btn primary" data-action="new-order">+ Novo pedido</button></div>`;
+
+ const q=($('#orderSearch')?.value||'').toLowerCase().trim();
+ const sort=$('#orderSort')?.value||'recent';
+ const sortOrders=(arr)=>arr.filter(o=>!q||`${o.project} ${o.client} ${o.type}`.toLowerCase().includes(q)).sort((a,b)=>
+   sort==='deadline'?(a.deadline||'9999').localeCompare(b.deadline||'9999'):
+   sort==='value'?b.value-a.value:
+   sort==='oldest'?a.created.localeCompare(b.created):
+   b.created.localeCompare(a.created)
+ );
+
+ const statuses=STATUS.slice();
+ const visibleStatuses=orderFilter==='all'?statuses:[orderFilter];
+ const columns=visibleStatuses.map(status=>{
+   const list=sortOrders(orders.filter(o=>o.status===status));
+   const cards=list.map(o=>`
+     <article class="order-card" data-order-card="${o.id}">
+       <div class="order-card-head">
+         <div class="project-cell">
+           <span class="project-mark">${esc(initials(o.project))}</span>
+           <div><b>${esc(o.project)}</b><small>${esc(o.client)}</small></div>
+         </div>
+         <button class="icon-action" title="Abrir pedido" data-open-order="${o.id}">↗</button>
+       </div>
+       <div class="order-card-meta">
+         <span>${esc(o.type)}</span>
+         <span>${dateLabel(o.deadline)}</span>
+         <strong>${money(o.value)}</strong>
+       </div>
+       ${o.priority!=='Normal'?`<small class="priority ${priorityClass(o.priority)}">${esc(o.priority)}</small>`:''}
+       ${o.origin==='Briefing online'?`<span class="online-badge">Briefing online</span>`:''}
+       <div class="order-card-actions">
+         <button class="icon-action" title="Voltar etapa" data-move-status="${o.id}" data-direction="-1" ${STATUS.indexOf(o.status)===0?'disabled':''}>←</button>
+         <button class="btn secondary small" data-open-order="${o.id}">Abrir</button>
+         <button class="icon-action" title="Avançar etapa" data-move-status="${o.id}" data-direction="1" ${STATUS.indexOf(o.status)===STATUS.length-1?'disabled':''}>→</button>
+       </div>
+     </article>`).join('');
+
+   return `<section class="order-stage" data-stage="${esc(status)}">
+      <header class="order-stage-head">
+        <div><span class="status-dot ${statusClass(status)}"></span><b>${esc(status)}</b><em>${list.length}</em></div>
+        <small>${status==='Novo'?'Briefings recebidos':status==='Em andamento'?'Produção':status==='Esperando aprovação'?'Aguardando cliente':status==='Alteração'?'Ajustes solicitados':status==='Entregue'?'Finalizados':'Recebidos'}</small>
+      </header>
+      <div class="order-stage-body">${cards||`<div class="stage-empty">Nenhum pedido nesta etapa.</div>`}</div>
+   </section>`;
+ }).join('');
+
+ $('#ordersTable').classList.add('orders-board');
+ $('#ordersTable').innerHTML=columns||`<div class="empty-state"><span>▤</span><h3>Nenhum pedido encontrado</h3><p>Crie um pedido ou envie seu link de briefing para começar.</p><button class="btn primary" data-action="new-order">+ Novo pedido</button></div>`;
 }
 function clientStats(name){const os=orders.filter(o=>o.client.toLowerCase()===name.toLowerCase()); return {count:os.length,total:os.reduce((a,o)=>a+o.value,0),paid:os.filter(o=>o.paid||o.status==='Pago').reduce((a,o)=>a+o.value,0)};}
 function renderClients(){
@@ -374,7 +432,72 @@ function renderPeopleGallery(o){
 function formatBytes(n){if(!n)return'arquivo';const u=['B','KB','MB','GB'];let i=0,x=n;while(x>=1024&&i<u.length-1){x/=1024;i++;}return`${x.toFixed(i?1:0)} ${u[i]}`;}
 function cycleStatus(id){const o=orders.find(x=>x.id===id);if(!o)return;const i=STATUS.indexOf(o.status);const next=STATUS[Math.min(i+1,STATUS.length-1)];if(next===o.status){toast('O pedido já está no status final.','info');return;}const old=o.status;o.status=next;if(next==='Pago')o.paid=true;addHistory(o,`Status alterado de ${old} para ${next}`);persist();render();closeModal();notify(`Status atualizado: ${next}`,`${o.project} • ${o.client}`,'info','pedidos',o.id);toast(`Pedido movido para ${next}.`);}
 function togglePaid(id){const o=orders.find(x=>x.id===id);if(!o)return;o.paid=!o.paid;if(o.paid){o.status='Pago';addHistory(o,'Pagamento recebido');notify('Pagamento recebido',`${o.project} • ${money(o.value)}`,'success','pedidos',o.id);}else{if(o.status==='Pago')o.status='Entregue';addHistory(o,'Pagamento marcado como pendente');}persist();render();toast(o.paid?'Pagamento registrado.':'Pagamento desmarcado.');}
-function deleteOrder(id){const o=orders.find(x=>x.id===id);if(!o)return;if(!confirm(`Excluir o pedido “${o.project}”? Esta ação não pode ser desfeita.`))return;orders=orders.filter(x=>x.id!==id);persist();closeModal();render();toast('Pedido excluído.','info');}
+function moveStatus(id,direction){
+  const o=orders.find(x=>x.id===id); if(!o)return;
+  const i=STATUS.indexOf(o.status);
+  const nextIndex=Math.max(0,Math.min(STATUS.length-1,i+direction));
+  if(nextIndex===i){toast(direction<0?'O pedido já está na primeira etapa.':'O pedido já está na etapa final.','info');return;}
+  const old=o.status, next=STATUS[nextIndex];
+  o.status=next;
+  if(next==='Pago')o.paid=true;
+  if(old==='Pago'&&next!=='Pago')o.paid=false;
+  addHistory(o,`Pedido movido de ${old} para ${next}`);
+  persist(); render();
+  notify(`Pedido movido para ${next}`,`${o.project} • ${o.client}`,'info','pedidos',o.id);
+}
+
+function deleteOrder(id){
+  const o=orders.find(x=>x.id===id); if(!o)return;
+  if(!confirm(`Mover o pedido “${o.project}” para a lixeira?\\n\\nEle vai desaparecer dos pedidos e NÃO será recriado pelo briefing online.`))return;
+
+  orders=orders.filter(x=>x.id!==id);
+  const deleted={...o,deletedAt:new Date().toISOString()};
+  trash.unshift(deleted);
+
+  if(o.remoteId){
+    const key=String(o.remoteId);
+    if(!deletedRemoteIds.includes(key))deletedRemoteIds.push(key);
+  }
+
+  persist(); closeModal(); render();
+  toast('Pedido movido para a lixeira.','info');
+}
+
+function openTrash(){
+  const rows=trash.map(o=>`
+    <div class="trash-row">
+      <div><b>${esc(o.project)}</b><small>${esc(o.client)} • excluído em ${new Date(o.deletedAt||Date.now()).toLocaleDateString('pt-BR')}</small></div>
+      <span class="status-pill ${statusClass(o.status)}">${esc(o.status)}</span>
+      <button class="btn secondary small" data-restore-order="${o.id}">Restaurar</button>
+      <button class="icon-action danger" title="Excluir permanentemente" data-purge-trash="${o.id}">×</button>
+    </div>`).join('');
+
+  modal(`<div class="modal-head"><div><span class="eyebrow">RECUPERAÇÃO</span><h2>Lixeira de pedidos</h2><p class="muted">Pedidos excluídos ficam aqui e não voltam para o painel automaticamente.</p></div><button class="close-modal" data-close-modal>×</button></div>
+  <div class="trash-list">${rows||`<div class="empty-mini center"><span>✓</span><div><b>A lixeira está vazia.</b><small>Pedidos excluídos aparecerão aqui.</small></div></div>`}</div>
+  <div class="modal-actions"><button class="btn secondary" data-close-modal>Fechar</button></div>`);
+}
+
+function restoreOrder(id){
+  const idx=trash.findIndex(x=>x.id===id); if(idx<0)return;
+  const o={...trash[idx]}; delete o.deletedAt;
+  if(o.remoteId) deletedRemoteIds=deletedRemoteIds.filter(x=>String(x)!==String(o.remoteId));
+  trash.splice(idx,1);
+  orders.unshift(o);
+  addHistory(o,'Pedido restaurado da lixeira');
+  persist(); render(); closeModal();
+  toast('Pedido restaurado.','success');
+  if(o.remoteId)setTimeout(syncOnlineBriefings,100);
+}
+
+function purgeTrash(id){
+  const idx=trash.findIndex(x=>x.id===id); if(idx<0)return;
+  const o=trash[idx];
+  if(!confirm(`Excluir permanentemente “${o.project}”?\\n\\nO pedido não poderá mais ser recuperado.`))return;
+  if(o.remoteId&&!deletedRemoteIds.includes(String(o.remoteId)))deletedRemoteIds.push(String(o.remoteId));
+  trash.splice(idx,1);
+  persist(); render(); openTrash();
+  toast('Pedido excluído permanentemente.','info');
+}
 
 function openClientForm(client=null){editingClientId=client?.id||null;const c=client||{name:'',company:'',whats:'',email:'',instagram:'',notes:''};modal(`<div class="modal-head"><div><span class="eyebrow">CLIENTE</span><h2>${editingClientId?'Editar cliente':'Novo cliente'}</h2></div><button class="close-modal" data-close-modal>×</button></div><form id="clientForm"><div class="two-col"><label>Nome completo<input id="clientName" value="${esc(c.name)}" required></label><label>Empresa<input id="clientCompany" value="${esc(c.company||'')}"></label></div><div class="two-col"><label>WhatsApp<input id="clientWhats" value="${esc(c.whats||'')}" ></label><label>E-mail<input id="clientEmail" type="email" value="${esc(c.email||'')}" ></label></div><label>Instagram<input id="clientInstagram" value="${esc(c.instagram||'')}"></label><label>Observações<textarea id="clientNotes" rows="4">${esc(c.notes||'')}</textarea></label><div class="modal-actions"><button type="button" class="btn secondary" data-close-modal>Cancelar</button><button class="btn primary" type="submit">Salvar cliente</button></div></form>`);
  $('#clientForm').onsubmit=e=>{e.preventDefault();const data={name:$('#clientName').value.trim(),company:$('#clientCompany').value.trim(),whats:$('#clientWhats').value.trim(),email:$('#clientEmail').value.trim(),instagram:$('#clientInstagram').value.trim(),notes:$('#clientNotes').value.trim()};if(!data.name){toast('Informe o nome do cliente.','error');return;}if(editingClientId){Object.assign(clients.find(x=>x.id===editingClientId),data);}else clients.unshift({id:uid('cli'),...data,created:todayISO()});persist();closeModal();render();toast(editingClientId?'Cliente atualizado.':'Cliente cadastrado.');}; }
@@ -444,10 +567,14 @@ function setupEvents(){
 function handleDelegated(e){const a=e.target.closest('[data-action]');if(a){const action=a.dataset.action;if(action==='new-order')openOrder();if(action==='new-client')openClientForm();if(action==='new-quote')openQuoteForm();if(action==='copy-briefing')generateLink();}
  const page=e.target.closest('[data-page-link]');if(page)go(page.dataset.pageLink);
  const open=e.target.closest('[data-open-order]');if(open)openOrderView(open.dataset.openOrder);
- const edit=e.target.closest('[data-edit-order]');if(edit){closeModal();openOrder(orders.find(o=>o.id===edit.dataset.editOrder));}
+ const edit=e.target.closest('[data-edit-order]');if(edit){const order=orders.find(o=>o.id===edit.dataset.editOrder);if(order)openOrder(order);}
  const del=e.target.closest('[data-delete-order]');if(del)deleteOrder(del.dataset.deleteOrder);
+ const trashBtn=e.target.closest('[data-open-trash]');if(trashBtn)openTrash();
+ const restore=e.target.closest('[data-restore-order]');if(restore)restoreOrder(restore.dataset.restoreOrder);
+ const purge=e.target.closest('[data-purge-trash]');if(purge)purgeTrash(purge.dataset.purgeTrash);
  const pdf=e.target.closest('[data-order-pdf]');if(pdf)generateOrderPDF(pdf.dataset.orderPdf);
  const paid=e.target.closest('[data-toggle-paid]');if(paid){togglePaid(paid.dataset.togglePaid);if($('#modalRoot').innerHTML)openOrderView(paid.dataset.togglePaid);}
+ const move=e.target.closest('[data-move-status]');if(move&&!move.disabled){moveStatus(move.dataset.moveStatus,Number(move.dataset.direction)||1);}
  const cyc=e.target.closest('[data-cycle-status]');if(cyc)cycleStatus(cyc.dataset.cycleStatus);
  const editC=e.target.closest('[data-edit-client]');if(editC){const c=clients.find(x=>x.id===editC.dataset.editClient);if(c){closeModal();openClientForm(c);}}
  const viewC=e.target.closest('[data-view-client]');if(viewC)viewClient(viewC.dataset.viewClient);
