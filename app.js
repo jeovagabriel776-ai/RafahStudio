@@ -13,7 +13,7 @@ const initials = v => String(v||'Designer').trim().split(/\s+/).slice(0,2).map(x
 const uid = p => `${p}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,8)}`;
 
 // Supabase - briefing online
-const SUPABASE_URL = 'https://jnazqhxptrtearaocvpx.supabase.co';
+const SUPABASE_URL = 'https://pltnbrjdagjwjuajoquv.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_TumK-xOT32ZdrtWfIYLI8g_VsSTEsve';
 
 // O RafahStudio usa a Publishable Key no navegador. Ela é segura para frontend
