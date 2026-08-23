@@ -218,3 +218,113 @@ grant execute on function public.update_catalog_item(text,uuid,text,text,text) t
 grant execute on function public.delete_catalog_item(text,uuid) to anon, authenticated;
 grant execute on function public.get_catalog_for_owner(text) to anon, authenticated;
 grant execute on function public.get_catalog_for_public(text) to anon, authenticated;
+
+-- ============================================================
+-- CONTAS DO RAFAHSTUDIO — Supabase Auth + perfil por usuário
+-- Execute esta parte uma vez.
+-- ============================================================
+create table if not exists public.rafah_profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  username text unique not null,
+  name text not null default '',
+  brand text not null default 'RafahStudio',
+  whatsapp text not null default '',
+  email text not null default '',
+  instagram text not null default '',
+  portfolio text not null default '',
+  area text not null default 'Designer gráfico',
+  bio text not null default '',
+  photo text not null default '',
+  banner text not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.rafah_profiles enable row level security;
+
+drop policy if exists "rafah_profiles_select_own" on public.rafah_profiles;
+drop policy if exists "rafah_profiles_insert_own" on public.rafah_profiles;
+drop policy if exists "rafah_profiles_update_own" on public.rafah_profiles;
+
+create policy "rafah_profiles_select_own" on public.rafah_profiles
+for select to authenticated using (id = auth.uid());
+
+create policy "rafah_profiles_insert_own" on public.rafah_profiles
+for insert to authenticated with check (id = auth.uid());
+
+create policy "rafah_profiles_update_own" on public.rafah_profiles
+for update to authenticated using (id = auth.uid()) with check (id = auth.uid());
+
+-- ============================================================
+-- RAFAHSTUDIO — PERFIL AUTOMÁTICO PARA CADA CONTA AUTH
+-- Esta parte garante que toda conta criada no Supabase Auth
+-- receba seu próprio perfil, sem depender do navegador.
+-- ============================================================
+
+create or replace function public.handle_new_rafah_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_username text;
+  v_base text;
+  v_suffix integer := 0;
+begin
+  v_base := lower(regexp_replace(
+    coalesce(nullif(trim(new.raw_user_meta_data->>'username'), ''), split_part(coalesce(new.email,''),'@',1), 'usuario'),
+    '[^a-zA-Z0-9_.-]', '', 'g'
+  ));
+  v_base := left(nullif(v_base,'')::text, 45);
+  if v_base is null or v_base = '' then v_base := 'usuario'; end if;
+  v_username := v_base;
+
+  while exists (select 1 from public.rafah_profiles where username = v_username) loop
+    v_suffix := v_suffix + 1;
+    v_username := left(v_base, 39) || '-' || v_suffix::text;
+  end loop;
+
+  insert into public.rafah_profiles(
+    id, username, name, brand, whatsapp, email, area
+  ) values (
+    new.id,
+    v_username,
+    coalesce(nullif(trim(new.raw_user_meta_data->>'name'), ''), split_part(coalesce(new.email,''),'@',1), 'Designer'),
+    'RafahStudio',
+    coalesce(new.raw_user_meta_data->>'whatsapp',''),
+    coalesce(new.email,''),
+    coalesce(nullif(trim(new.raw_user_meta_data->>'area'), ''), 'Designer gráfico')
+  )
+  on conflict (id) do nothing;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created_rafah on auth.users;
+create trigger on_auth_user_created_rafah
+after insert on auth.users
+for each row execute function public.handle_new_rafah_user();
+
+create or replace function public.set_rafah_profile_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists rafah_profiles_updated_at on public.rafah_profiles;
+create trigger rafah_profiles_updated_at
+before update on public.rafah_profiles
+for each row execute function public.set_rafah_profile_updated_at();
+
+-- ============================================================
+-- IMPORTANTE:
+-- A confirmação de e-mail é uma configuração do Authentication > Providers > Email.
+-- Para o primeiro teste, deixe "Confirm email" DESATIVADO.
+-- A conta continuará armazenada no Supabase Auth e poderá ser usada em outro dispositivo.
+-- ============================================================

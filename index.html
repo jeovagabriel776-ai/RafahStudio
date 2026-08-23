@@ -29,16 +29,16 @@
         <p id="authSubtitle">Entre para gerenciar seu estúdio.</p>
       </div>
       <form id="loginForm" class="auth-form">
-        <label>Usuário<input id="loginUser" autocomplete="username" required></label>
+        <label>E-mail<input id="loginUser" type="email" autocomplete="username" required></label>
         <label>Senha<input id="loginPass" type="password" autocomplete="current-password" required></label>
         <button class="btn primary wide" type="submit">Entrar <span>→</span></button>
         <button class="auth-switch" type="button" id="showRegisterBtn">Ainda não tenho conta</button>
       </form>
-      <div id="rememberedAccounts" class="remembered-accounts"></div>
       <form id="registerForm" class="auth-form hidden">
         <label>Nome completo<input id="regName" required></label>
+        <label>E-mail de acesso<input id="regEmail" type="email" autocomplete="email" required></label>
         <div class="two-col">
-          <label>Usuário<input id="regUser" autocomplete="username" required></label>
+          <label>Usuário<input id="regUser" autocomplete="nickname" required></label>
           <label>WhatsApp<input id="regWhats" inputmode="tel"></label>
         </div>
         <label>Senha<input id="regPass" type="password" minlength="4" autocomplete="new-password" required></label>
@@ -46,7 +46,7 @@
         <button class="btn primary wide" type="submit">Criar minha conta <span>→</span></button>
         <button class="auth-switch" type="button" id="showLoginBtn">Já tenho uma conta</button>
       </form>
-      <small class="local-note">Seu workspace reúne pedidos, clientes, briefings, orçamentos e informações do seu perfil em um só lugar.</small>
+      <small class="local-note">Sua conta é criada com segurança no servidor e pode ser acessada com seu e-mail e senha em outro dispositivo.</small>
     </div>
   </section>
 

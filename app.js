@@ -2,7 +2,7 @@
 const $ = (s, root=document) => root.querySelector(s);
 const $$ = (s, root=document) => [...root.querySelectorAll(s)];
 const APP = 'rafahstudio';
-const KEYS = { accounts:`${APP}:accounts`, user:`${APP}:user`, theme:`${APP}:theme`, designer:`${APP}:designer`, orders:`${APP}:orders`, clients:`${APP}:clients`, quotes:`${APP}:quotes`, catalog:`${APP}:catalog`, notifications:`${APP}:notifications`, trash:`${APP}:trash`, deletedRemote:`${APP}:deleted-remote`, deletedRemoteFingerprints:`${APP}:deleted-remote-fingerprints` };
+const KEYS = { user:`${APP}:user`, theme:`${APP}:theme`, designer:`${APP}:designer`, orders:`${APP}:orders`, clients:`${APP}:clients`, quotes:`${APP}:quotes`, catalog:`${APP}:catalog`, notifications:`${APP}:notifications`, trash:`${APP}:trash`, deletedRemote:`${APP}:deleted-remote`, deletedRemoteFingerprints:`${APP}:deleted-remote-fingerprints` };
 const STATUS = ['Novo','Em andamento','Esperando aprovação','Alteração','Entregue','Pago'];
 const QUOTE_STATUS = ['Rascunho','Enviado','Aprovado','Recusado'];
 const todayISO = () => new Date().toISOString().slice(0,10);
@@ -25,7 +25,9 @@ function initSupabaseClient(){
       console.error('[RafahStudio] Biblioteca Supabase não encontrada.');
       return false;
     }
-    supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+    supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, storageKey: 'rafahstudio-auth' }
+    });
     return !!supabaseClient;
   }catch(err){
     console.error('[RafahStudio] Falha ao inicializar Supabase:', err);
@@ -37,8 +39,9 @@ initSupabaseClient();
 const ownerTokenKey = user => `${APP}:owner-token:${user||'default'}`;
 const publicTokenKey = user => `${APP}:public-token:${user||'default'}`;
 function randomToken(){return (crypto.randomUUID?.()||uid('tok'))+'-'+Math.random().toString(36).slice(2)+Date.now().toString(36);}
-function getOwnerToken(){const u=currentUser?.user||'default';let t=localStorage.getItem(ownerTokenKey(u));if(!t){t=randomToken();localStorage.setItem(ownerTokenKey(u),t);}return t;}
-function getPublicToken(){const u=currentUser?.user||'default';let t=localStorage.getItem(publicTokenKey(u));if(!t){t=randomToken();localStorage.setItem(publicTokenKey(u),t);}return t;}
+function accountScopeId(){return currentUser?.id||currentUser?.user||currentUser?.email||currentUser?.username||'default';}
+function getOwnerToken(){const u=accountScopeId();let t=localStorage.getItem(ownerTokenKey(u));if(!t){t=randomToken();localStorage.setItem(ownerTokenKey(u),t);}return t;}
+function getPublicToken(){const u=accountScopeId();let t=localStorage.getItem(publicTokenKey(u));if(!t){t=randomToken();localStorage.setItem(publicTokenKey(u),t);}return t;}
 function briefingTokenFromHash(){try{const h=location.hash.slice('#briefing='.length);if(!h)return '';const p=JSON.parse(decodeURIComponent(escape(atob(h))));return p.publicToken||'';}catch{return '';}}
 async function uploadBriefingFile(file, publicToken, briefingId, index){
   if(!supabaseClient) throw new Error('Biblioteca do Supabase não carregou.');
@@ -239,9 +242,10 @@ async function syncOnlineBriefings(){
 const read = (key, fallback) => { try { const v=localStorage.getItem(key); return v===null?fallback:JSON.parse(v); } catch { return fallback; } };
 const write = (key, value) => localStorage.setItem(key, JSON.stringify(value));
 
-let accounts = read(KEYS.accounts, []);
+const DEFAULT_DESIGNER = {name:'',brand:'RafahStudio',whats:'',email:'',insta:'',portfolio:'',area:'Designer gráfico',bio:'',photo:'',banner:''};
+let accounts = [];
 let currentUser = read(KEYS.user, null);
-let designer = read(KEYS.designer, null) || {name:'',brand:'RafahStudio',whats:'',email:'',insta:'',portfolio:'',area:'Designer gráfico',bio:'',photo:'',banner:''};
+let designer = {...DEFAULT_DESIGNER};
 let orders = read(KEYS.orders, []);
 let clients = read(KEYS.clients, []);
 let quotes = read(KEYS.quotes, []);
@@ -257,10 +261,9 @@ function migrateLegacy(){
   const legacyOrders = read('studioflow_v2_orders', null);
   if(!orders.length && Array.isArray(legacyOrders)) orders = legacyOrders.map(normalizeOrder);
   if(!designer.name){ const old=read('studioflow_designer',null); if(old) designer={...designer,...old}; }
-  if(!accounts.length){ const old=read('studioflow_accounts',null); if(Array.isArray(old)) accounts=old; }
   const oldUser=read('studioflow_user',null); if(!currentUser && oldUser) currentUser=oldUser;
   orders = orders.map(normalizeOrder);
-  write(KEYS.orders,orders); write(KEYS.designer,designer); write(KEYS.accounts,accounts);
+  // Contas e credenciais não são mais armazenadas no navegador. O login oficial é feito pelo Supabase Auth.
   if(currentUser) write(KEYS.user,currentUser);
 }
 function normalizeStatus(s){
@@ -271,36 +274,33 @@ function normalizeStatus(s){
 function normalizeOrder(o){ return {id:o.id||uid('ord'),remoteId:o.remoteId||'',remoteCreated:o.remoteCreated||'',client:o.client||'',project:o.project||'Sem projeto',deadline:o.deadline||'',value:Number(o.value)||0,type:o.type||'Outro',status:normalizeStatus(o.status),created:o.created||todayISO(),paid:Boolean(o.paid||o.status==='Pago'),origin:o.origin||'Manual',priority:o.priority||'Normal',briefing:o.briefing||{},files:Array.isArray(o.files)?o.files:[],history:Array.isArray(o.history)?o.history:[]}; }
 migrateLegacy();
 
-function scopedKey(base){ return `${base}:${currentUser?.user||'guest'}`; }
+function scopedKey(base){ return `${base}:${currentUser?.id||currentUser?.user||currentUser?.email||'guest'}`; }
 function loadScoped(){
   if(!currentUser) return;
-  const oldOrders=orders; const oldClients=clients; const oldQuotes=quotes; const oldCatalog=catalog;
-  orders=read(scopedKey('rafahstudio:orders'), oldOrders.length?oldOrders:[]).map(normalizeOrder);
-  clients=read(scopedKey('rafahstudio:clients'), oldClients);
-  // Migração única: pedidos antigos que apareciam como clientes virtuais
-  // passam a ter um cadastro real, editável e removível. Depois da migração
-  // o sistema nunca recria esses clientes apenas por causa de um pedido antigo.
-  const clientMigrationKey=scopedKey('rafahstudio:clients-migrated-v1');
-  if(localStorage.getItem(clientMigrationKey)!=='1'){
-    orders.forEach(o=>{
-      const name=String(o.client||'').trim();
-      if(name && !clients.some(c=>String(c.name||'').trim().toLowerCase()===name.toLowerCase())){
-        clients.push({id:uid('cli'),name,company:'',whats:o.briefing?.whats||'',email:'',instagram:'',notes:'Cliente cadastrado a partir de um pedido existente',created:o.created||todayISO(),origin:'Pedido existente'});
-      }
-    });
-    localStorage.setItem(clientMigrationKey,'1');
-  }
-  quotes=read(scopedKey('rafahstudio:quotes'), oldQuotes);
-  catalog=read(scopedKey('rafahstudio:catalog'), oldCatalog);
-  notifications=read(scopedKey('rafahstudio:notifications'), notifications);
-  trash=read(scopedKey('rafahstudio:trash'), []);
-  deletedRemoteIds=read(scopedKey('rafahstudio:deletedRemote'), []);
-  deletedRemoteFingerprints=read(scopedKey('rafahstudio:deletedRemoteFingerprints'), []);
-  const p=read(scopedKey('rafahstudio:designer'), null); if(p) designer={...designer,...p};
+  // Cada conta começa com um workspace próprio. Nunca reutilizamos o estado global
+  // de outra conta para preencher uma conta nova.
+  const key=String(currentUser.id||currentUser.user||currentUser.email||'guest');
+  const oldScope=currentUser._scopeKey;
+  if(oldScope && oldScope!==key){ /* apenas uma troca de sessão */ }
+  currentUser._scopeKey=key;
+  const sk=base=>`${base}:${key}`;
+  orders=read(sk('rafahstudio:orders'),[]).map(normalizeOrder);
+  clients=read(sk('rafahstudio:clients'),[]);
+  quotes=read(sk('rafahstudio:quotes'),[]);
+  catalog=read(sk('rafahstudio:catalog'),[]);
+  notifications=read(sk('rafahstudio:notifications'),[]);
+  trash=read(sk('rafahstudio:trash'),[]);
+  deletedRemoteIds=read(sk('rafahstudio:deletedRemote'),[]);
+  deletedRemoteFingerprints=read(sk('rafahstudio:deletedRemoteFingerprints'),[]);
+  designer={...DEFAULT_DESIGNER,...(read(sk('rafahstudio:designer'),{})||{})};
 }
+
 function persist(){
-  if(currentUser){ write(scopedKey('rafahstudio:orders'),orders); write(scopedKey('rafahstudio:clients'),clients); write(scopedKey('rafahstudio:quotes'),quotes); write(scopedKey('rafahstudio:catalog'),catalog); write(scopedKey('rafahstudio:notifications'),notifications); write(scopedKey('rafahstudio:designer'),designer); write(scopedKey('rafahstudio:trash'),trash); write(scopedKey('rafahstudio:deletedRemote'),deletedRemoteIds); write(scopedKey('rafahstudio:deletedRemoteFingerprints'),deletedRemoteFingerprints); }
-  write(KEYS.accounts,accounts); write(KEYS.user,currentUser);
+  if(!currentUser) return;
+  const key=String(currentUser.id||currentUser.user||currentUser.email||'guest');
+  const sk=base=>`${base}:${key}`;
+  write(sk('rafahstudio:orders'),orders); write(sk('rafahstudio:clients'),clients); write(sk('rafahstudio:quotes'),quotes); write(sk('rafahstudio:catalog'),catalog); write(sk('rafahstudio:notifications'),notifications); write(sk('rafahstudio:designer'),designer); write(sk('rafahstudio:trash'),trash); write(sk('rafahstudio:deletedRemote'),deletedRemoteIds); write(sk('rafahstudio:deletedRemoteFingerprints'),deletedRemoteFingerprints);
+  write(KEYS.user,currentUser);
 }
 
 function toast(message,type='success'){ const el=document.createElement('div'); el.className=`toast ${type}`; el.innerHTML=`<span>${type==='error'?'!':type==='info'?'i':'✓'}</span><div>${esc(message)}</div>`; $('#toastRoot').appendChild(el); setTimeout(()=>el.classList.add('show'),20); setTimeout(()=>{el.classList.remove('show');setTimeout(()=>el.remove(),250)},3200); }
@@ -330,7 +330,7 @@ function go(page){ $$('.page').forEach(p=>p.classList.toggle('active',p.id===pag
 function render(){ if(!currentUser) return; renderIdentity(); renderDashboard(); renderOrders(); renderClients(); renderCatalog(); renderQuotes(); renderFinance(); renderNotifications(); renderProfile(); }
 const renderAll = render;
 function renderIdentity(){
- const name=designer.name||currentUser.name||'Designer'; $('#dashName').textContent=name.split(/\s+/)[0]; $('#sideName').textContent=name; $('#sideRole').textContent=designer.area||currentUser.area||'Designer gráfico'; $('#sideUsername').textContent='@'+(currentUser.user||'usuario'); $('#profileUser').textContent=currentUser.user||'—'; $('#todayLabel').textContent=new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'});
+ const name=designer.name||currentUser.name||'Designer'; $('#dashName').textContent=name.split(/\s+/)[0]; $('#sideName').textContent=name; $('#sideRole').textContent=designer.area||currentUser.area||'Designer gráfico'; $('#sideUsername').textContent='@'+(currentUser.username||currentUser.user||'usuario'); $('#profileUser').textContent=currentUser.username||currentUser.user||currentUser.email||'—'; $('#todayLabel').textContent=new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'});
  ['sideAvatar','topAvatar','profileAvatar'].forEach(id=>{const el=$('#'+id); if(!el)return; if(designer.photo){el.innerHTML=`<img src="${designer.photo}" alt="Foto de ${esc(name)}">`}else el.textContent=initials(name);});
 }
 function renderDashboard(){
@@ -434,17 +434,96 @@ function renderNotifications(){
 }
 function renderProfile(){ $('#dName').value=designer.name||'';$('#dBrand').value=designer.brand||'';$('#dWhats').value=designer.whats||'';$('#dEmail').value=designer.email||'';$('#dInsta').value=designer.insta||'';$('#dPortfolio').value=designer.portfolio||'';$('#dArea').value=designer.area||'';$('#dBio').value=designer.bio||''; const cover=$('#profileCover'); if(cover){cover.style.backgroundImage=designer.banner?`url(\"${designer.banner}\")`:'';cover.classList.toggle('has-image',!!designer.banner);} }
 
-function renderRememberedAccounts(){
-  const box=$('#rememberedAccounts');
-  if(!box)return;
-  const list=accounts.slice(-5).reverse();
-  box.innerHTML=list.length?`<div class="remembered-title">Contas lembradas neste dispositivo</div><div class="remembered-list">${list.map(a=>`<button type="button" class="remembered-account" data-remember-user="${esc(a.user)}"><span class="avatar">${esc(initials(a.name||a.user))}</span><span><b>${esc(a.name||a.user)}</b><small>@${esc(a.user)}</small></span><span class="remembered-arrow">→</span></button>`).join('')}</div>`:'';
-  $$('.remembered-account',box).forEach(btn=>btn.addEventListener('click',()=>{ $('#loginUser').value=btn.dataset.rememberUser||''; $('#loginPass').focus(); }));
+function showAuth(mode='login'){ $('#authScreen').classList.remove('hidden'); $('#app').classList.add('hidden'); $('#publicPage').classList.add('hidden'); $('#loginForm').classList.toggle('hidden',mode!=='login'); $('#registerForm').classList.toggle('hidden',mode!=='register'); $('#authEyebrow').textContent=mode==='login'?'ACESSAR CONTA':'COMEÇAR AGORA'; $('#authTitle').textContent=mode==='login'?'Bem-vindo de volta':'Crie seu workspace'; $('#authSubtitle').textContent=mode==='login'?'Entre com seu e-mail e senha.':'Sua conta fica salva no servidor e pode ser acessada de outro dispositivo.'; if(mode==='login')setTimeout(()=>$('#loginUser')?.focus(),80); }
+async function login(email,pass){
+  if(!supabaseClient) initSupabaseClient();
+  if(!supabaseClient){toast('Não foi possível conectar ao serviço de contas.','error');return;}
+  if(!email||!pass){toast('Informe e-mail e senha.','error');return;}
+  try{
+    const {data,error}=await supabaseClient.auth.signInWithPassword({email:email.trim().toLowerCase(),password:pass});
+    if(error) throw error;
+    await establishAuthenticatedUser(data.user);
+      showApp();toast('Bem-vindo de volta.');
+  }catch(err){console.error(err);toast(err?.message||'E-mail ou senha inválidos.','error');}
 }
-function showAuth(mode='login'){ $('#authScreen').classList.remove('hidden'); $('#app').classList.add('hidden'); $('#publicPage').classList.add('hidden'); $('#loginForm').classList.toggle('hidden',mode!=='login'); $('#registerForm').classList.toggle('hidden',mode!=='register'); $('#rememberedAccounts').classList.toggle('hidden',mode!=='login'); $('#authEyebrow').textContent=mode==='login'?'ACESSAR CONTA':'COMEÇAR AGORA'; $('#authTitle').textContent=mode==='login'?'Bem-vindo de volta':'Crie seu workspace'; $('#authSubtitle').textContent=mode==='login'?'Entre para gerenciar seu estúdio.':'Organize seu trabalho em poucos passos.'; renderRememberedAccounts(); if(mode==='login')setTimeout(()=>$('#loginUser')?.focus(),80); }
-function login(user,pass){const acc=accounts.find(a=>a.user.toLowerCase()===user.toLowerCase()&&a.pass===pass);if(!acc){toast('Usuário ou senha inválidos.','error');return;} currentUser={user:acc.user,name:acc.name,area:acc.area,whats:acc.whats};write(KEYS.user,currentUser);loadScoped();showApp();toast('Bem-vindo ao RafahStudio.');}
-function register(){const name=$('#regName').value.trim(),user=$('#regUser').value.trim(),pass=$('#regPass').value,whats=$('#regWhats').value.trim(),area=$('#regArea').value;if(!name||!user||!pass){toast('Preencha nome, usuário e senha.','error');return;}if(accounts.some(a=>a.user.toLowerCase()===user.toLowerCase())){toast('Esse usuário já existe.','error');return;}const acc={id:uid('acc'),name,user,pass,whats,area};accounts.push(acc);currentUser={user,name,area,whats};designer={...designer,name,whats,area,brand:'RafahStudio'};write(KEYS.user,currentUser);write(KEYS.accounts,accounts);loadScoped();persist();showApp();toast('Conta criada com sucesso.');}
-function logout(){currentUser=null;localStorage.removeItem(KEYS.user);showAuth('login');toast('Você saiu da conta.','info');}
+async function register(){
+  const name=$('#regName').value.trim(),email=$('#regEmail').value.trim().toLowerCase(),user=$('#regUser').value.trim(),pass=$('#regPass').value,whats=$('#regWhats').value.trim(),area=$('#regArea').value;
+  if(!name||!email||!user||!pass){toast('Preencha nome, e-mail, usuário e senha.','error');return;}
+  if(pass.length<6){toast('A senha precisa ter pelo menos 6 caracteres.','error');return;}
+  if(!supabaseClient) initSupabaseClient();
+  if(!supabaseClient){toast('Não foi possível conectar ao serviço de contas.','error');return;}
+  try{
+    const {data,error}=await supabaseClient.auth.signUp({email,password:pass,options:{data:{name,username:user,whatsapp:whats,area}}});
+    if(error) throw error;
+    if(!data.user) throw new Error('Não foi possível criar a conta.');
+    if(!data.session){toast('Conta criada. Confirme o e-mail para liberar o primeiro acesso.','info');showAuth('login');return;}
+    await establishAuthenticatedUser(data.user,{name,username:user,whatsapp:whats,area});
+    showApp();toast('Conta criada com sucesso.');
+  }catch(err){console.error(err);toast(err?.message||'Não foi possível criar a conta.','error');}
+}
+async function establishAuthenticatedUser(user,override={}){
+  const meta=user?.user_metadata||{};
+  currentUser={id:user.id,email:user.email,name:override.name||meta.name||user.email,username:override.username||meta.username||user.email,area:override.area||meta.area||'Designer gráfico',whats:override.whatsapp||meta.whatsapp||''};
+  write(KEYS.user,currentUser);
+  loadScoped();
+
+  // A autenticação e o perfil remoto são a fonte oficial da conta.
+  // O navegador guarda apenas um cache por UUID para acelerar a interface.
+  const loaded=await loadRemoteProfile();
+  if(!loaded){
+    designer={...DEFAULT_DESIGNER,name:currentUser.name,whats:currentUser.whats,area:currentUser.area,email:currentUser.email};
+    await saveRemoteProfile();
+  }
+  persist();
+}
+async function logout(){
+  try{if(supabaseClient)await supabaseClient.auth.signOut();}catch(e){console.warn(e);}
+  currentUser=null;localStorage.removeItem(KEYS.user);showAuth('login');toast('Você saiu da conta.','info');
+}
+
+async function saveRemoteProfile(){
+  if(!supabaseClient||!currentUser?.id)return false;
+  try{
+    const {error}=await supabaseClient.from('rafah_profiles').upsert({
+      id:currentUser.id,
+      username:currentUser.username||'',
+      name:designer.name||currentUser.name||'',
+      brand:designer.brand||'RafahStudio',
+      whatsapp:designer.whats||currentUser.whats||'',
+      email:designer.email||currentUser.email||'',
+      instagram:designer.insta||'',
+      portfolio:designer.portfolio||'',
+      area:designer.area||'Designer gráfico',
+      bio:designer.bio||'',
+      photo:designer.photo||'',
+      banner:designer.banner||''
+    },{onConflict:'id'});
+    if(error)throw error;
+    return true;
+  }catch(e){console.warn('[RafahStudio] Perfil remoto:',e);return false;}
+}
+async function loadRemoteProfile(){
+  if(!supabaseClient||!currentUser?.id)return false;
+  try{
+    const {data,error}=await supabaseClient.from('rafah_profiles').select('*').eq('id',currentUser.id).maybeSingle();
+    if(error)throw error;
+    if(!data)return false;
+    designer={...DEFAULT_DESIGNER,...designer,...{
+      name:data.name||designer.name||currentUser.name,
+      brand:data.brand||designer.brand,
+      whats:data.whatsapp||designer.whats||currentUser.whats,
+      email:data.email||designer.email||currentUser.email,
+      insta:data.instagram||designer.insta,
+      portfolio:data.portfolio||designer.portfolio,
+      area:data.area||designer.area||currentUser.area,
+      bio:data.bio||designer.bio,
+      photo:data.photo||designer.photo,
+      banner:data.banner||designer.banner
+    }};
+    persist();
+    return true;
+  }catch(e){console.warn('[RafahStudio] Não foi possível carregar o perfil remoto:',e);return false;}
+}
 function showApp(){ $('#authScreen').classList.add('hidden');$('#publicPage').classList.add('hidden');$('#app').classList.remove('hidden');go('dashboard');render(); }
 
 function openOrder(order=null){editingOrderId=order?.id||null; const o=order||{client:'',project:'',deadline:'',value:0,type:'Cartaz',status:'Novo',priority:'Normal',briefing:{},files:[]}; modal(`<div class="modal-head"><div><span class="eyebrow">${editingOrderId?'EDITAR PEDIDO':'NOVO PEDIDO'}</span><h2>${editingOrderId?'Editar projeto':'Criar novo projeto'}</h2></div><button class="close-modal" data-close-modal>×</button></div><form id="orderForm"><div class="two-col"><label>Cliente<input id="orderClient" value="${esc(o.client)}" required></label><label>Projeto<input id="orderProject" value="${esc(o.project)}" required></label></div><div class="two-col"><label>Prazo<input id="orderDeadline" type="date" value="${esc(o.deadline)}"></label><label>Valor<input id="orderValue" type="number" min="0" step="0.01" value="${Number(o.value)||0}"></label></div><div class="two-col"><label>Serviço<select id="orderType">${['Cartaz','Cartaz para igreja/evento','Post para Instagram','Identidade visual','Logo','Outro'].map(x=>`<option ${x===o.type?'selected':''}>${x}</option>`).join('')}</select></label><label>Status<select id="orderStatus">${STATUS.map(x=>`<option ${x===o.status?'selected':''}>${x}</option>`).join('')}</select></label></div><label>Prioridade<select id="orderPriority"><option ${o.priority==='Normal'?'selected':''}>Normal</option><option ${o.priority==='Alta'?'selected':''}>Alta</option><option ${o.priority==='Urgente'?'selected':''}>Urgente</option></select></label><label>Observações / briefing interno<textarea id="orderNotes" rows="6">${esc(typeof o.briefing==='string' ? o.briefing : (o.briefing?.notes||o.briefing?.texts||''))}</textarea></label><div class="modal-actions"><button type="button" class="btn secondary" data-close-modal>Cancelar</button><button class="btn primary" type="submit">Salvar pedido</button></div></form>`);
@@ -672,7 +751,7 @@ function setupEvents(){
  $$('.nav-item[data-page]').forEach(b=>b.addEventListener('click',()=>go(b.dataset.page))); $('#logoutBtn').onclick=logout;$('#profileQuick').onclick=()=>go('perfil');$('#mobileMenu').onclick=()=>$('#sidebar').classList.toggle('mobile-open');
  $('#notificationBtn').onclick=e=>{e.stopPropagation();$('#notificationPanel').classList.toggle('open');};document.addEventListener('click',e=>{if(!e.target.closest('#notificationPanel')&&!e.target.closest('#notificationBtn'))$('#notificationPanel').classList.remove('open');});$('#markReadBtn').onclick=()=>{notifications=notifications.map(n=>({...n,read:true}));persist();renderNotifications();toast('Notificações marcadas como lidas.','info');};
  $('#globalSearch').oninput=e=>{const q=e.target.value.trim();if(q){go('pedidos');$('#orderSearch').value=q;renderOrders();}};$('#orderSearch').oninput=renderOrders;$('#orderSort').onchange=renderOrders;$('#clientSearch').oninput=renderClients;$('#catalogSearch').oninput=renderCatalog;$('#quoteSearch').oninput=renderQuotes;$('#quoteFilter').onchange=renderQuotes;['finStart','finEnd','finStatus'].forEach(id=>$('#'+id).onchange=renderFinance);$('#clearFinance').onclick=()=>{$('#finStart').value='';$('#finEnd').value='';$('#finStatus').value='all';renderFinance();};$('#copyBriefingBtn').onclick=()=>generateLink();
- $('#saveProfileBtn').onclick=async()=>{const btn=$('#saveProfileBtn');btn.disabled=true;try{designer={...designer,name:$('#dName').value.trim()||'Designer',brand:$('#dBrand').value.trim(),whats:$('#dWhats').value.trim(),email:$('#dEmail').value.trim(),insta:$('#dInsta').value.trim(),portfolio:$('#dPortfolio').value.trim(),area:$('#dArea').value.trim(),bio:$('#dBio').value.trim(),photo:designer.photo||'',banner:designer.banner||''};const file=$('#profileBanner')?.files?.[0];if(file){if(file.size>8*1024*1024)throw new Error('O banner deve ter no máximo 8 MB.');if(!supabaseClient)initSupabaseClient();if(!supabaseClient)throw new Error('Não foi possível conectar ao armazenamento.');showUploadProgress('Enviando banner…','Atualizando o banner do seu perfil.');const safe=(file.name||'banner').replace(/[^a-zA-Z0-9._-]/g,'_');const path=`profile/${getOwnerToken()}/${Date.now()}-${safe}`;const {error}=await supabaseClient.storage.from('briefing-files').upload(path,file,{upsert:false,contentType:file.type||'image/jpeg'});if(error)throw error;designer.banner=supabaseClient.storage.from('briefing-files').getPublicUrl(path).data.publicUrl;updateUploadProgress(100,'Banner atualizado com sucesso.');}persist();renderIdentity();renderProfile();renderDashboard();if(file)hideUploadProgress(true);toast('Perfil atualizado e pronto para aparecer nos briefings.');}catch(err){hideUploadProgress(false);toast(err?.message||'Não foi possível salvar o perfil.','error');}finally{btn.disabled=false;}};$('#profilePhoto').onchange=async e=>{const f=e.target.files[0];if(!f)return;if(f.size>4*1024*1024){toast('Escolha uma foto de até 4 MB.','error');e.target.value='';return;}showUploadProgress('Atualizando foto…','Carregando a foto do seu perfil.');try{designer.photo=await new Promise((res,rej)=>{const r=new FileReader();r.onprogress=ev=>{if(ev.lengthComputable)updateUploadProgress(Math.max(10,(ev.loaded/ev.total)*90),'Carregando a foto do perfil…');};r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(f);});updateUploadProgress(100,'Foto atualizada com sucesso.');persist();renderIdentity();renderProfile();hideUploadProgress(true);}catch(err){hideUploadProgress(false);toast('Não foi possível atualizar a foto.','error');}finally{e.target.value='';}};$('#exportBackupBtn').onclick=exportBackup;$('#importBackup').onchange=e=>{if(e.target.files[0])importBackup(e.target.files[0]);};
+ $('#saveProfileBtn').onclick=async()=>{const btn=$('#saveProfileBtn');btn.disabled=true;try{designer={...designer,name:$('#dName').value.trim()||'Designer',brand:$('#dBrand').value.trim(),whats:$('#dWhats').value.trim(),email:$('#dEmail').value.trim(),insta:$('#dInsta').value.trim(),portfolio:$('#dPortfolio').value.trim(),area:$('#dArea').value.trim(),bio:$('#dBio').value.trim(),photo:designer.photo||'',banner:designer.banner||''};const file=$('#profileBanner')?.files?.[0];if(file){if(file.size>8*1024*1024)throw new Error('O banner deve ter no máximo 8 MB.');if(!supabaseClient)initSupabaseClient();if(!supabaseClient)throw new Error('Não foi possível conectar ao armazenamento.');showUploadProgress('Enviando banner…','Atualizando o banner do seu perfil.');const safe=(file.name||'banner').replace(/[^a-zA-Z0-9._-]/g,'_');const path=`profile/${getOwnerToken()}/${Date.now()}-${safe}`;const {error}=await supabaseClient.storage.from('briefing-files').upload(path,file,{upsert:false,contentType:file.type||'image/jpeg'});if(error)throw error;designer.banner=supabaseClient.storage.from('briefing-files').getPublicUrl(path).data.publicUrl;updateUploadProgress(100,'Banner atualizado com sucesso.');}persist();await saveRemoteProfile();renderIdentity();renderProfile();renderDashboard();if(file)hideUploadProgress(true);toast('Perfil atualizado e pronto para aparecer nos briefings.');}catch(err){hideUploadProgress(false);toast(err?.message||'Não foi possível salvar o perfil.','error');}finally{btn.disabled=false;}};$('#profilePhoto').onchange=async e=>{const f=e.target.files[0];if(!f)return;if(f.size>4*1024*1024){toast('Escolha uma foto de até 4 MB.','error');e.target.value='';return;}showUploadProgress('Atualizando foto…','Carregando a foto do seu perfil.');try{designer.photo=await new Promise((res,rej)=>{const r=new FileReader();r.onprogress=ev=>{if(ev.lengthComputable)updateUploadProgress(Math.max(10,(ev.loaded/ev.total)*90),'Carregando a foto do perfil…');};r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(f);});updateUploadProgress(100,'Foto atualizada com sucesso.');persist();await saveRemoteProfile();renderIdentity();renderProfile();hideUploadProgress(true);}catch(err){hideUploadProgress(false);toast('Não foi possível atualizar a foto.','error');}finally{e.target.value='';}};$('#exportBackupBtn').onclick=exportBackup;$('#importBackup').onchange=e=>{if(e.target.files[0])importBackup(e.target.files[0]);};
  document.addEventListener('click',handleDelegated);document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeModal();$('#notificationPanel').classList.remove('open');}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='n'){e.preventDefault();openOrder();}});
 }
 function handleDelegated(e){const a=e.target.closest('[data-action]');if(a){const action=a.dataset.action;if(action==='new-order')openOrder();if(action==='new-client')openClientForm();if(action==='new-quote')openQuoteForm();if(action==='new-catalog')openCatalogForm();if(action==='copy-briefing')generateLink();}
@@ -707,10 +786,23 @@ function handleDelegated(e){const a=e.target.closest('[data-action]');if(a){cons
 }
 
 
-function init(){
- setupEvents();setupPublic();
- document.body.classList.add('dark');
- if(handlePublicHash())return;
- if(currentUser){loadScoped();showApp();setTimeout(()=>{syncOnlineBriefings();refreshCatalogFromSupabase();},400);setInterval(syncOnlineBriefings,30000);}else showAuth('login');
+async function init(){
+  setupEvents();setupPublic();document.body.classList.add('dark');
+  if(handlePublicHash())return;
+  if(!supabaseClient){initSupabaseClient();}
+  try{
+    const {data}=await supabaseClient.auth.getSession();
+    if(data?.session?.user){
+      await establishAuthenticatedUser(data.session.user);
+      showApp();
+      setTimeout(()=>{syncOnlineBriefings();refreshCatalogFromSupabase();},400);
+      setInterval(syncOnlineBriefings,30000);
+      return;
+    }
+  }catch(e){console.warn('[RafahStudio] Sessão:',e);}
+  currentUser=null;
+  localStorage.removeItem(KEYS.user);
+  showAuth('login');
 }
+
 init();
