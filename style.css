@@ -171,3 +171,23 @@ body { color-scheme: dark; }
 .metric-icon.green { background: #183129; color: #9de0c8; }
 .project-mark { background: #1b2926; color: #a8d8ca; }
 .public-theme-btn { display: none !important; }
+
+/* RAFAHSTUDIO — perfil público e apresentação do designer */
+.profile-cover{height:230px;background:linear-gradient(120deg,#0e1715,#23322f 60%,#1a5a4b);background-size:cover;background-position:center;position:relative;overflow:hidden}
+.profile-cover.has-image{background-color:#111;background-repeat:no-repeat}
+.profile-cover.has-image::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.05),rgba(0,0,0,.55))}
+.profile-cover-overlay{position:absolute;z-index:2;left:22px;bottom:18px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;color:#fff;text-shadow:0 1px 3px #0008}
+.profile-cover-overlay b,.profile-cover-overlay small{display:block}.profile-cover-overlay b{font:700 13px Manrope,sans-serif}.profile-cover-overlay small{font-size:9px;opacity:.85}
+.profile-cover-overlay label{margin:0!important;text-shadow:none}
+.profile-cover-overlay input{display:none!important}
+.success-socials{width:min(640px,100%);margin:24px auto 20px}
+.success-social-head h3{font:800 20px Manrope,sans-serif;margin:6px 0}.success-social-head p{margin:0 0 14px!important}
+.success-social-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;text-align:left}
+.success-social-card{display:flex;align-items:center;gap:11px;padding:12px 14px;border:1px solid var(--pub-line);background:var(--pub-surface);border-radius:14px;color:var(--pub-ink);text-decoration:none;transition:.18s}
+.success-social-card:hover{transform:translateY(-2px);border-color:var(--pub-accent);background:var(--pub-surface-2)}
+.success-social-card>span{width:34px;height:34px;border-radius:10px;background:var(--pub-soft);color:var(--pub-accent);display:grid;place-items:center;font-size:16px;flex:0 0 34px}
+.success-social-card b,.success-social-card small{display:block}.success-social-card b{font-size:11px}.success-social-card small{font-size:9px;color:var(--pub-muted);margin-top:2px}.success-social-card strong{margin-left:auto;color:var(--pub-muted)}
+.success-finish-note{display:block;margin-top:10px;color:var(--pub-muted);font-size:9px}
+.public-social-dock{position:fixed;z-index:40;right:18px;bottom:18px;display:flex;gap:6px;padding:6px;border:1px solid var(--pub-line);background:color-mix(in srgb,var(--pub-surface) 88%,transparent);backdrop-filter:blur(12px);border-radius:15px;box-shadow:0 12px 35px #0005}
+.public-social{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;color:var(--pub-ink);text-decoration:none;position:relative;transition:.18s}.public-social:hover{background:var(--pub-soft);color:var(--pub-accent);transform:translateY(-2px)}.public-social span{font-size:17px}.public-social small{position:absolute;bottom:calc(100% + 7px);right:0;white-space:nowrap;padding:5px 7px;border-radius:7px;background:#050908;color:#fff;font-size:8px;opacity:0;pointer-events:none;transform:translateY(3px);transition:.15s}.public-social:hover small{opacity:1;transform:none}
+@media(max-width:560px){.profile-cover{height:180px}.profile-cover-overlay{left:14px;right:14px;bottom:12px}.success-social-grid{grid-template-columns:1fr}.public-social-dock{left:50%;right:auto;transform:translateX(-50%);bottom:10px}.public-social{width:42px;height:42px}.public-success{padding-bottom:75px}}
