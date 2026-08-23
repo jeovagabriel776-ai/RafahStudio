@@ -176,10 +176,11 @@ body { color-scheme: dark; }
 .profile-cover{height:230px;background:linear-gradient(120deg,#0e1715,#23322f 60%,#1a5a4b);background-size:cover;background-position:center;position:relative;overflow:hidden}
 .profile-cover.has-image{background-color:#111;background-repeat:no-repeat}
 .profile-cover.has-image::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.05),rgba(0,0,0,.55))}
-.profile-cover-overlay{position:absolute;z-index:2;left:22px;bottom:18px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;color:#fff;text-shadow:0 1px 3px #0008}
-.profile-cover-overlay b,.profile-cover-overlay small{display:block}.profile-cover-overlay b{font:700 13px Manrope,sans-serif}.profile-cover-overlay small{font-size:9px;opacity:.85}
-.profile-cover-overlay label{margin:0!important;text-shadow:none}
-.profile-cover-overlay input{display:none!important}
+.profile-cover-edit{position:absolute;z-index:4;right:14px;top:14px;width:38px;height:38px;border-radius:12px;border:1px solid rgba(255,255,255,.22);background:rgba(7,14,12,.72);backdrop-filter:blur(10px);display:grid;place-items:center;color:#fff;font-size:17px;font-weight:800;cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,.25);transition:.18s}
+.profile-cover-edit:hover{transform:translateY(-1px);background:rgba(7,14,12,.9);border-color:#72cdb4;color:#72cdb4}
+.profile-cover-edit input{display:none!important}
+.upload-avatar{position:absolute;left:0;right:0;bottom:-34px;text-align:center;font-size:10px!important;color:#72cdb4!important;cursor:pointer;font-weight:700!important}
+.profile-card .avatar-upload{margin-bottom:28px}
 .success-socials{width:min(640px,100%);margin:24px auto 20px}
 .success-social-head h3{font:800 20px Manrope,sans-serif;margin:6px 0}.success-social-head p{margin:0 0 14px!important}
 .success-social-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;text-align:left}
@@ -191,3 +192,14 @@ body { color-scheme: dark; }
 .public-social-dock{position:fixed;z-index:40;right:18px;bottom:18px;display:flex;gap:6px;padding:6px;border:1px solid var(--pub-line);background:color-mix(in srgb,var(--pub-surface) 88%,transparent);backdrop-filter:blur(12px);border-radius:15px;box-shadow:0 12px 35px #0005}
 .public-social{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;color:var(--pub-ink);text-decoration:none;position:relative;transition:.18s}.public-social:hover{background:var(--pub-soft);color:var(--pub-accent);transform:translateY(-2px)}.public-social span{font-size:17px}.public-social small{position:absolute;bottom:calc(100% + 7px);right:0;white-space:nowrap;padding:5px 7px;border-radius:7px;background:#050908;color:#fff;font-size:8px;opacity:0;pointer-events:none;transform:translateY(3px);transition:.15s}.public-social:hover small{opacity:1;transform:none}
 @media(max-width:560px){.profile-cover{height:180px}.profile-cover-overlay{left:14px;right:14px;bottom:12px}.success-social-grid{grid-template-columns:1fr}.public-social-dock{left:50%;right:auto;transform:translateX(-50%);bottom:10px}.public-social{width:42px;height:42px}.public-success{padding-bottom:75px}}
+
+
+/* Upload feedback — imagens de perfil e banner */
+.upload-progress{position:fixed;inset:0;z-index:9999;background:rgba(3,8,7,.34);display:grid;place-items:center;padding:20px;backdrop-filter:blur(3px)}
+.upload-progress.hidden{display:none!important}
+.upload-progress-card{width:min(520px,100%);display:flex;align-items:center;gap:14px;padding:17px 18px;border:1px solid #29423a;border-radius:17px;background:#101917;color:#edf5f2;box-shadow:0 22px 70px rgba(0,0,0,.48)}
+.upload-progress-icon{width:42px;height:42px;border-radius:13px;display:grid;place-items:center;background:#16372d;color:#72cdb4;font-size:20px;flex:0 0 42px}
+.upload-progress-content{flex:1;min-width:0}.upload-progress-content b{display:block;font-size:13px}.upload-progress-content small{display:block;color:#9bb0aa;font-size:10px;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.upload-progress-track{height:7px;background:#1e2b28;border-radius:99px;overflow:hidden;margin-top:10px}.upload-progress-track span{display:block;height:100%;width:0;background:#72cdb4;border-radius:inherit;transition:width .18s ease}
+.upload-progress-card>strong{font-size:11px;color:#72cdb4;min-width:35px;text-align:right}
+@media(max-width:560px){.profile-cover-edit{right:10px;top:10px}.upload-progress-card{padding:14px}.upload-progress-icon{width:38px;height:38px;flex-basis:38px}}
