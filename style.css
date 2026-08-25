@@ -211,3 +211,26 @@ body { color-scheme: dark; }
 .status-pill{border:1px solid rgba(2,189,248,.14)}
 .metric-card.accent{background:linear-gradient(145deg,rgba(2,189,248,.10),rgba(15,107,90,.10));border-color:rgba(2,189,248,.20)}
 .card:hover{border-color:rgba(2,189,248,.20)}
+
+/* RAFahStudio identity override - dark + logo colors */
+:root{
+  --brand-blue:#0148fa;
+  --brand-cyan:#02bdf8;
+  --brand-light:#58e5ff;
+  --brand-green:#0b5e4f;
+  --brand-glow:rgba(2,189,248,.22);
+}
+body{background:#070d0c;color:#f1f8f7}
+.btn.primary{background:linear-gradient(135deg,var(--brand-blue),var(--brand-cyan) 58%,var(--brand-light)) !important;color:#fff !important;box-shadow:0 8px 24px var(--brand-glow) !important}
+.btn.primary:hover{background:linear-gradient(135deg,#0b57ff,var(--brand-light)) !important;box-shadow:0 12px 30px rgba(2,189,248,.32) !important}
+.nav-item.active{background:linear-gradient(90deg,rgba(2,189,248,.18),rgba(1,72,250,.06)) !important;color:#fff !important;box-shadow:inset 3px 0 var(--brand-cyan),0 0 18px rgba(2,189,248,.06) !important}
+.nav-item:hover{color:#e9fdff !important;background:rgba(2,189,248,.08) !important}
+.nav-icon{color:var(--brand-light) !important}
+input:focus,select:focus,textarea:focus{border-color:var(--brand-cyan) !important;box-shadow:0 0 0 3px rgba(2,189,248,.14) !important}
+.global-search:focus-within,.search-box:focus-within{border-color:var(--brand-cyan) !important;box-shadow:0 0 0 3px rgba(2,189,248,.08)}
+.section-title::before,.page-title::before{background:linear-gradient(180deg,var(--brand-light),var(--brand-cyan),var(--brand-green)) !important}
+.badge,.status-badge,.tag{border-color:rgba(2,189,248,.28)}
+.logo-slot,.site-logo{filter:drop-shadow(0 8px 18px rgba(2,189,248,.12))}
+.topbar{border-bottom-color:rgba(2,189,248,.16)}
+.card:hover,.stat-card:hover,.panel:hover{border-color:rgba(2,189,248,.22)}
+.progress-bar,.progress-fill{background:linear-gradient(90deg,var(--brand-blue),var(--brand-cyan),var(--brand-light)) !important}
