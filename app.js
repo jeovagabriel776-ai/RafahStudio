@@ -2,7 +2,7 @@
 const $ = (s, root=document) => root.querySelector(s);
 const $$ = (s, root=document) => [...root.querySelectorAll(s)];
 const APP = 'rafahstudio';
-const KEYS = { user:`${APP}:user`, theme:`${APP}:theme`, designer:`${APP}:designer`, orders:`${APP}:orders`, clients:`${APP}:clients`, quotes:`${APP}:quotes`, catalog:`${APP}:catalog`, notifications:`${APP}:notifications`, trash:`${APP}:trash`, deletedRemote:`${APP}:deleted-remote`, deletedRemoteFingerprints:`${APP}:deleted-remote-fingerprints` };
+const KEYS = { user:`${APP}:user`, theme:`${APP}:theme`, designer:`${APP}:designer`, orders:`${APP}:orders`, clients:`${APP}:clients`, quotes:`${APP}:quotes`, catalog:`${APP}:catalog`, notifications:`${APP}:notifications`, trash:`${APP}:trash`, deletedRemote:`${APP}:deleted-remote`, deletedRemoteFingerprints:`${APP}:deleted-remote-fingerprints`, notificationPrefs:`${APP}:notification-prefs` };
 const STATUS = ['Novo','Em andamento','Esperando aprovação','Alteração','Entregue','Pago'];
 const QUOTE_STATUS = ['Rascunho','Enviado','Aprovado','Recusado'];
 const todayISO = () => new Date().toISOString().slice(0,10);
@@ -212,6 +212,9 @@ async function syncOnlineBriefings(){
           linkPage:'pedidos',
           linkId:o.id
         });
+        playNotificationSound();
+        speakNotification('Novo briefing recebido',`${o.project} • ${o.client}`);
+        pushDeviceNotification('Novo briefing recebido',`${o.project} • ${o.client}`);
       }
     }
 
@@ -320,7 +323,49 @@ function closeModal(){
   backdrop.classList.remove('is-visible');
   setTimeout(()=>{root.innerHTML='';document.body.classList.remove('modal-open');},150);
 }
-function notify(title,body,kind='info',linkPage='pedidos',linkId=null){ notifications.unshift({id:uid('ntf'),title,body,kind,created:new Date().toISOString(),read:false,linkPage,linkId}); notifications=notifications.slice(0,80); persist(); renderNotifications(); }
+
+let notificationPrefs=JSON.parse(localStorage.getItem(KEYS.notificationPrefs)||'{"sound":"soft","voice":"off"}');
+function saveNotificationPrefs(){localStorage.setItem(KEYS.notificationPrefs,JSON.stringify(notificationPrefs));}
+function playNotificationSound(){
+  if(notificationPrefs.sound==='none') return;
+  try{
+    const C=window.AudioContext||window.webkitAudioContext;if(!C)return;
+    const ctx=new C(),o=ctx.createOscillator(),g=ctx.createGain();
+    o.type='sine';
+    const now=ctx.currentTime;
+    if(notificationPrefs.sound==='alert'){
+      o.frequency.setValueAtTime(740,now);o.frequency.setValueAtTime(980,now+.11);
+      g.gain.setValueAtTime(.0001,now);g.gain.exponentialRampToValueAtTime(.07,now+.015);g.gain.exponentialRampToValueAtTime(.0001,now+.28);
+      o.start(now);o.stop(now+.3);
+    }else{
+      o.frequency.setValueAtTime(620,now);o.frequency.setValueAtTime(760,now+.10);
+      g.gain.setValueAtTime(.0001,now);g.gain.exponentialRampToValueAtTime(.045,now+.02);g.gain.exponentialRampToValueAtTime(.0001,now+.24);
+      o.start(now);o.stop(now+.26);
+    }
+    o.connect(g);g.connect(ctx.destination);setTimeout(()=>ctx.close(),500);
+  }catch(e){}
+}
+function speakNotification(title,body){
+  if(notificationPrefs.voice!=='on'||!('speechSynthesis' in window))return;
+  try{window.speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(`${title}. ${body}`);u.lang='pt-BR';u.rate=.96;u.volume=.7;window.speechSynthesis.speak(u);}catch(e){}
+}
+async function enableDeviceNotifications(){
+  if(!('Notification' in window)){toast('Seu navegador não oferece notificações do dispositivo.','warning');return;}
+  try{
+    const permission=await Notification.requestPermission();
+    if(permission==='granted'){toast('Notificações do dispositivo ativadas.','success');}
+    else toast('Permissão de notificações não foi concedida.','warning');
+  }catch(e){toast('Não foi possível ativar as notificações.','warning');}
+}
+function pushDeviceNotification(title,body){
+  if(!('Notification' in window)||Notification.permission!=='granted')return;
+  try{
+    const n=new Notification(title,{body,icon:'assets/logo.svg',badge:'assets/logo.svg',tag:'rafahstudio-briefing'});
+    n.onclick=()=>{window.focus();if(typeof go==='function')go('pedidos');n.close();};
+  }catch(e){}
+}
+
+function notify(title,body,kind='info',linkPage='pedidos',linkId=null){ notifications.unshift({id:uid('ntf'),title,body,kind,created:new Date().toISOString(),read:false,linkPage,linkId}); notifications=notifications.slice(0,80); persist(); renderNotifications(); playNotificationSound(); speakNotification(title,body); pushDeviceNotification(title,body); }
 function formatRelative(iso){const diff=Math.max(0,Date.now()-new Date(iso).getTime());const min=Math.floor(diff/60000);if(min<1)return'agora';if(min<60)return`há ${min} min`;const h=Math.floor(min/60);if(h<24)return`há ${h} h`;const d=Math.floor(h/24);return`há ${d} d`;}
 function statusClass(s){return ({'Novo':'status-new','Em andamento':'status-doing','Esperando aprovação':'status-wait','Alteração':'status-change','Entregue':'status-done','Pago':'status-paid'})[s]||'';}
 function priorityClass(p){return ({Alta:'priority-high',Urgente:'priority-urgent'})[p]||'';}
@@ -749,7 +794,14 @@ function hideUploadProgress(success=false){
 function setupEvents(){
  $('#loginForm').onsubmit=e=>{e.preventDefault();login($('#loginUser').value.trim(),$('#loginPass').value);};$('#registerForm').onsubmit=e=>{e.preventDefault();register();};$('#showRegisterBtn').onclick=()=>showAuth('register');$('#showLoginBtn').onclick=()=>showAuth('login');
  $$('.nav-item[data-page]').forEach(b=>b.addEventListener('click',()=>go(b.dataset.page))); $('#logoutBtn').onclick=logout;$('#profileQuick').onclick=()=>go('perfil');$('#mobileMenu').onclick=()=>$('#sidebar').classList.toggle('mobile-open');
- $('#notificationBtn').onclick=e=>{e.stopPropagation();$('#notificationPanel').classList.toggle('open');};document.addEventListener('click',e=>{if(!e.target.closest('#notificationPanel')&&!e.target.closest('#notificationBtn'))$('#notificationPanel').classList.remove('open');});$('#markReadBtn').onclick=()=>{notifications=notifications.map(n=>({...n,read:true}));persist();renderNotifications();toast('Notificações marcadas como lidas.','info');};
+ $('#notificationBtn').onclick=e=>{e.stopPropagation();$('#notificationPanel').classList.toggle('open');};
+document.addEventListener('click',e=>{if(!e.target.closest('#notificationPanel')&&!e.target.closest('#notificationBtn'))$('#notificationPanel').classList.remove('open');});
+$('#markReadBtn').onclick=()=>{notifications=notifications.map(n=>({...n,read:true}));persist();renderNotifications();toast('Notificações marcadas como lidas.','info');};
+$('#enableNotificationsBtn').onclick=enableDeviceNotifications;
+$('#notificationSound').value=notificationPrefs.sound;
+$('#notificationVoice').value=notificationPrefs.voice;
+$('#notificationSound').onchange=e=>{notificationPrefs.sound=e.target.value;saveNotificationPrefs();};
+$('#notificationVoice').onchange=e=>{notificationPrefs.voice=e.target.value;saveNotificationPrefs();};
  $('#globalSearch').oninput=e=>{const q=e.target.value.trim();if(q){go('pedidos');$('#orderSearch').value=q;renderOrders();}};$('#orderSearch').oninput=renderOrders;$('#orderSort').onchange=renderOrders;$('#clientSearch').oninput=renderClients;$('#catalogSearch').oninput=renderCatalog;$('#quoteSearch').oninput=renderQuotes;$('#quoteFilter').onchange=renderQuotes;['finStart','finEnd','finStatus'].forEach(id=>$('#'+id).onchange=renderFinance);$('#clearFinance').onclick=()=>{$('#finStart').value='';$('#finEnd').value='';$('#finStatus').value='all';renderFinance();};$('#copyBriefingBtn').onclick=()=>generateLink();
  $('#saveProfileBtn').onclick=async()=>{const btn=$('#saveProfileBtn');btn.disabled=true;try{designer={...designer,name:$('#dName').value.trim()||'Designer',brand:$('#dBrand').value.trim(),whats:$('#dWhats').value.trim(),email:$('#dEmail').value.trim(),insta:$('#dInsta').value.trim(),portfolio:$('#dPortfolio').value.trim(),area:$('#dArea').value.trim(),bio:$('#dBio').value.trim(),photo:designer.photo||'',banner:designer.banner||''};const file=$('#profileBanner')?.files?.[0];if(file){if(file.size>8*1024*1024)throw new Error('O banner deve ter no máximo 8 MB.');if(!supabaseClient)initSupabaseClient();if(!supabaseClient)throw new Error('Não foi possível conectar ao armazenamento.');showUploadProgress('Enviando banner…','Atualizando o banner do seu perfil.');const safe=(file.name||'banner').replace(/[^a-zA-Z0-9._-]/g,'_');const path=`profile/${getOwnerToken()}/${Date.now()}-${safe}`;const {error}=await supabaseClient.storage.from('briefing-files').upload(path,file,{upsert:false,contentType:file.type||'image/jpeg'});if(error)throw error;designer.banner=supabaseClient.storage.from('briefing-files').getPublicUrl(path).data.publicUrl;updateUploadProgress(100,'Banner atualizado com sucesso.');}persist();await saveRemoteProfile();renderIdentity();renderProfile();renderDashboard();if(file)hideUploadProgress(true);toast('Perfil atualizado e pronto para aparecer nos briefings.');}catch(err){hideUploadProgress(false);toast(err?.message||'Não foi possível salvar o perfil.','error');}finally{btn.disabled=false;}};$('#profilePhoto').onchange=async e=>{const f=e.target.files[0];if(!f)return;if(f.size>4*1024*1024){toast('Escolha uma foto de até 4 MB.','error');e.target.value='';return;}showUploadProgress('Atualizando foto…','Carregando a foto do seu perfil.');try{designer.photo=await new Promise((res,rej)=>{const r=new FileReader();r.onprogress=ev=>{if(ev.lengthComputable)updateUploadProgress(Math.max(10,(ev.loaded/ev.total)*90),'Carregando a foto do perfil…');};r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(f);});updateUploadProgress(100,'Foto atualizada com sucesso.');persist();await saveRemoteProfile();renderIdentity();renderProfile();hideUploadProgress(true);}catch(err){hideUploadProgress(false);toast('Não foi possível atualizar a foto.','error');}finally{e.target.value='';}};$('#exportBackupBtn').onclick=exportBackup;$('#importBackup').onchange=e=>{if(e.target.files[0])importBackup(e.target.files[0]);};
  document.addEventListener('click',handleDelegated);document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeModal();$('#notificationPanel').classList.remove('open');}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='n'){e.preventDefault();openOrder();}});

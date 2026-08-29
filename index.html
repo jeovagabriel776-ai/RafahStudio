@@ -25,7 +25,6 @@
     </div>
     <div class="auth-panel">
       <div class="auth-panel-head">
-        <div class="mobile-brand logo-only"><span class="logo-slot"><img class="site-logo" src="assets/logo.svg" alt="Logo"></span></div>
         <span class="eyebrow" id="authEyebrow">ACESSAR CONTA</span>
         <h2 id="authTitle">Bem-vindo de volta</h2>
         <p id="authSubtitle">Entre para gerenciar seu estúdio.</p>
@@ -131,7 +130,15 @@
     </main>
   </div>
 
-  <div id="notificationPanel" class="notification-panel"><div class="panel-head"><div><b>Notificações</b><small>Atividade recente do seu workspace.</small></div><button class="text-btn" id="markReadBtn">Marcar todas como lidas</button></div><div id="notificationsList"></div></div>
+  <div id="notificationPanel" class="notification-panel">
+  <div class="panel-head"><div><b>Notificações</b><small>Atividade recente do seu workspace.</small></div><button class="text-btn" id="markReadBtn">Marcar lidas</button></div>
+  <div class="notification-preferences">
+    <label><span>🔔 Notificações do dispositivo</span><button type="button" class="text-btn" id="enableNotificationsBtn">Ativar</button></label>
+    <label><span>Som</span><select id="notificationSound"><option value="soft">Suave</option><option value="alert">Alerta</option><option value="none">Sem som</option></select></label>
+    <label><span>Voz</span><select id="notificationVoice"><option value="off">Sem voz</option><option value="on">Com voz</option></select></label>
+  </div>
+  <div id="notificationsList"></div>
+</div>
   <div id="overlay" class="overlay hidden"></div>
   <div id="modalRoot"></div>
   <div id="uploadProgress" class="upload-progress hidden" aria-live="polite"><div class="upload-progress-card"><div class="upload-progress-icon">↑</div><div class="upload-progress-content"><b id="uploadProgressTitle">Enviando arquivo…</b><small id="uploadProgressText">Aguarde enquanto atualizamos sua imagem.</small><div class="upload-progress-track"><span id="uploadProgressBar"></span></div></div><strong id="uploadProgressPercent">0%</strong></div></div>

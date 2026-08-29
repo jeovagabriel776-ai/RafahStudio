@@ -234,3 +234,9 @@ input:focus,select:focus,textarea:focus{border-color:var(--brand-cyan) !importan
 .topbar{border-bottom-color:rgba(2,189,248,.16)}
 .card:hover,.stat-card:hover,.panel:hover{border-color:rgba(2,189,248,.22)}
 .progress-bar,.progress-fill{background:linear-gradient(90deg,var(--brand-blue),var(--brand-cyan),var(--brand-light)) !important}
+
+/* RafahStudio — preferências de notificações */
+.notification-preferences{padding:10px 14px;border-bottom:1px solid var(--line);display:grid;gap:8px;background:var(--surface-2)}
+.notification-preferences label{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:10px;color:var(--ink)}
+.notification-preferences select{min-width:118px;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:9px;padding:6px 8px;font-size:10px}
+.notification-preferences .text-btn{font-size:10px;padding:5px 8px}
