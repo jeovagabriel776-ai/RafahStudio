@@ -202,7 +202,7 @@ async function syncOnlineBriefings(){
         }
         byRemote.set(remoteKey,o);
         changed=true;
-        notifications.unshift({
+        const newBriefingNotification={
           id:uid('ntf'),
           title:'Novo briefing recebido',
           body:`${o.project} • ${o.client}`,
@@ -211,7 +211,11 @@ async function syncOnlineBriefings(){
           read:false,
           linkPage:'pedidos',
           linkId:o.id
-        });
+        };
+        notifications.unshift(newBriefingNotification);
+        window.dispatchEvent(new CustomEvent('rafah:new-briefing',{detail:{
+          project_name:o.project,client_name:o.client,orderId:o.id
+        }}));
       }
     }
 
@@ -808,23 +812,142 @@ async function init(){
 init();
 
 
-/* RAFAHSTUDIO NOTIFICAÇÕES V2 */
+/* =========================================================
+   RAFAHSTUDIO — NOTIFICAÇÕES V3
+   Som | Silencioso | Voz | Som + voz
+   Popup suave + painel integrado
+   ========================================================= */
 (function(){
-const KEY='rafah_notification_preferences_v2', HIST='rafah_notification_history_v2';
-let prefs=(()=>{try{return Object.assign({mode:'sound',browser:true},JSON.parse(localStorage.getItem(KEY)||'{}'))}catch(e){return {mode:'sound',browser:true}}})();
-let ctx=null;
-function save(){localStorage.setItem(KEY,JSON.stringify(prefs))}
-function esc(x){return String(x??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}
-function hist(){try{return JSON.parse(localStorage.getItem(HIST)||'[]')}catch(e){return []}}
-function add(n){let h=hist();h.unshift({...n,at:Date.now()});localStorage.setItem(HIST,JSON.stringify(h.slice(0,30)));render()}
-function sound(){if(prefs.mode==='silent'||prefs.mode==='voice')return;try{ctx=ctx||new(window.AudioContext||window.webkitAudioContext)();let t=ctx.currentTime;[0,.16].forEach((d,i)=>{let o=ctx.createOscillator(),g=ctx.createGain();o.frequency.value=i?740:520;g.gain.setValueAtTime(.0001,t+d);g.gain.exponentialRampToValueAtTime(.07,t+d+.015);g.gain.exponentialRampToValueAtTime(.0001,t+d+.13);o.connect(g);g.connect(ctx.destination);o.start(t+d);o.stop(t+d+.15)})}catch(e){}}
-function voice(text){if(!['voice','sound_voice'].includes(prefs.mode)||!speechSynthesis)return;try{speechSynthesis.cancel();let u=new SpeechSynthesisUtterance(text);u.lang='pt-BR';u.rate=.96;u.volume=.85;speechSynthesis.speak(u)}catch(e){}}
-function sys(title,body){if(prefs.browser&&'Notification'in window&&Notification.permission==='granted')new Notification(title,{body,tag:'rafahstudio-briefing'})}
-function toast(title,body){document.querySelectorAll('.rs-notification-toast').forEach(x=>x.remove());let e=document.createElement('div');e.className='rs-notification-toast';e.innerHTML='<div class="rs-toast-icon">✓</div><div class="rs-toast-body"><b></b><span></span></div><button class="rs-toast-close" aria-label="Fechar">×</button>';e.querySelector('b').textContent=title;e.querySelector('span').textContent=body;e.querySelector('.rs-toast-close').onclick=()=>e.remove();document.body.appendChild(e);setTimeout(()=>e.remove(),6500)}
-function notify(title='Novo briefing recebido',body='Um novo pedido foi enviado pelo briefing.'){toast(title,body);add({title,body});sound();voice(title+'. '+body);sys(title,body)}
-function render(){let l=document.getElementById('rs-notif-list');if(!l)return;let h=hist();l.innerHTML=h.length?h.map(x=>`<div class="rs-notif-item"><i class="rs-notif-dot"></i><strong>${esc(x.title)}</strong><span>${esc(x.body)}</span></div>`).join(''):'<div class="rs-notif-empty">Nenhuma notificação por enquanto.</div>'}
-function panel(){let p=document.getElementById('rs-notification-panel');if(!p){p=document.createElement('div');p.id='rs-notification-panel';p.className='rs-notification-panel';p.hidden=true;p.innerHTML='<div class="rs-notif-head"><h3>Notificações</h3><button class="rs-notif-close">×</button></div><div id="rs-notif-list"></div><div class="rs-notif-settings"><label>Modo de aviso</label><select id="rs-notif-mode"><option value="sound">Som de notificação</option><option value="silent">Sem som</option><option value="voice">Com voz</option><option value="sound_voice">Som + voz</option></select><button class="rs-notif-test">Testar aviso</button></div>';document.body.appendChild(p);p.querySelector('.rs-notif-close').onclick=()=>p.hidden=true;p.querySelector('#rs-notif-mode').value=prefs.mode;p.querySelector('#rs-notif-mode').onchange=e=>{prefs.mode=e.target.value;save()};p.querySelector('.rs-notif-test').onclick=()=>notify('Teste de notificação','O RafahStudio está pronto para avisar sobre novos briefings.')};p.hidden=false;render()}
-window.RafahStudioNotify=notify;window.RafahStudioOpenNotifications=panel;
-window.addEventListener('rafah:new-briefing',e=>{let d=e.detail||{};notify('Novo briefing recebido',(d.project_name||d.client_name)?`${d.project_name||'Novo projeto'}${d.client_name?' • '+d.client_name:''}`:'Um novo pedido foi enviado pelo briefing.')});
-window.addEventListener('load',()=>{document.addEventListener('click',e=>{if(e.target.closest?.('[data-notifications],[data-action="notifications"],.notification-button,.notifications-btn')){e.preventDefault();panel()}});render()});
+  const KEY='rafah_notification_preferences_v3';
+  const defaults={mode:'sound',browser:true};
+  let prefs=(()=>{try{return {...defaults,...JSON.parse(localStorage.getItem(KEY)||'{}')}}catch(e){return {...defaults}}})();
+  let audioCtx=null;
+
+  const escN=x=>String(x??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
+  const savePrefs=()=>localStorage.setItem(KEY,JSON.stringify(prefs));
+
+  function playSoftSound(){
+    if(!['sound','sound_voice'].includes(prefs.mode)) return;
+    try{
+      audioCtx=audioCtx||new (window.AudioContext||window.webkitAudioContext)();
+      if(audioCtx.state==='suspended') audioCtx.resume().catch(()=>{});
+      const t=audioCtx.currentTime;
+      [0,.16].forEach((d,i)=>{
+        const o=audioCtx.createOscillator(),g=audioCtx.createGain();
+        o.type='sine'; o.frequency.value=i?740:520;
+        g.gain.setValueAtTime(.0001,t+d);
+        g.gain.exponentialRampToValueAtTime(.075,t+d+.018);
+        g.gain.exponentialRampToValueAtTime(.0001,t+d+.14);
+        o.connect(g);g.connect(audioCtx.destination);o.start(t+d);o.stop(t+d+.16);
+      });
+    }catch(e){}
+  }
+  function speak(text){
+    if(!['voice','sound_voice'].includes(prefs.mode) || !('speechSynthesis' in window)) return;
+    try{
+      speechSynthesis.cancel();
+      const u=new SpeechSynthesisUtterance(text);
+      u.lang='pt-BR';u.rate=.96;u.pitch=1;u.volume=.85;
+      speechSynthesis.speak(u);
+    }catch(e){}
+  }
+  function systemNotify(title,body){
+    if(!prefs.browser || !('Notification' in window)) return;
+    if(Notification.permission==='granted'){
+      try{new Notification(title,{body,tag:'rafahstudio-briefing'});}catch(e){}
+    }
+  }
+  function getHistory(){
+    try{return JSON.parse(localStorage.getItem('rafah_notification_history_v3')||'[]')}catch(e){return []}
+  }
+  function saveHistory(items){localStorage.setItem('rafah_notification_history_v3',JSON.stringify(items.slice(0,30)))}
+
+  function showPopup(title,body){
+    document.querySelectorAll('.rs3-toast').forEach(x=>x.remove());
+    const el=document.createElement('div');
+    el.className='rs3-toast';
+    el.innerHTML='<div class="rs3-toast-icon">✓</div><div class="rs3-toast-body"><b></b><span></span></div><button class="rs3-toast-close" aria-label="Fechar">×</button>';
+    el.querySelector('b').textContent=title;
+    el.querySelector('span').textContent=body;
+    el.querySelector('.rs3-toast-close').onclick=()=>el.remove();
+    document.body.appendChild(el);
+    setTimeout(()=>{if(el.isConnected){el.classList.add('rs3-toast-out');setTimeout(()=>el.remove(),260)}},6500);
+  }
+  function renderPanel(){
+    const list=document.getElementById('rs3-notif-list');
+    if(!list)return;
+    const h=getHistory();
+    list.innerHTML=h.length?h.map(x=>`<div class="rs3-item"><span class="rs3-dot"></span><div><b>${escN(x.title)}</b><small>${escN(x.body)}</small><time>${new Date(x.at).toLocaleString('pt-BR')}</time></div></div>`).join(''):'<div class="rs3-empty">Nenhuma notificação por enquanto.</div>';
+  }
+  function addHistory(title,body){
+    const h=getHistory();
+    h.unshift({title,body,at:Date.now()});
+    saveHistory(h);renderPanel();
+  }
+  function notify(title='Novo briefing recebido',body='Um novo pedido foi enviado pelo briefing.'){
+    showPopup(title,body);
+    addHistory(title,body);
+    playSoftSound();
+    speak(title+'. '+body);
+    systemNotify(title,body);
+  }
+  function ensurePanel(){
+    let p=document.getElementById('rs3-notification-panel');
+    if(p)return p;
+    p=document.createElement('aside');
+    p.id='rs3-notification-panel';
+    p.className='rs3-panel';
+    p.hidden=true;
+    p.innerHTML=`<div class="rs3-head"><div><b>Notificações</b><small>Novos briefings e atividades</small></div><button type="button" class="rs3-close">×</button></div>
+      <div id="rs3-notif-list"></div>
+      <div class="rs3-settings">
+        <label>Como você quer ser avisado?</label>
+        <select id="rs3-mode">
+          <option value="sound">🔊 Som de notificação</option>
+          <option value="silent">🔇 Sem som</option>
+          <option value="voice">🗣️ Com voz</option>
+          <option value="sound_voice">🔊🗣️ Som + voz</option>
+        </select>
+        <label class="rs3-check"><input id="rs3-browser" type="checkbox"> Notificação do dispositivo</label>
+        <div class="rs3-actions"><button type="button" id="rs3-enable">Ativar notificações</button><button type="button" id="rs3-test">Testar</button></div>
+      </div>`;
+    document.body.appendChild(p);
+    p.querySelector('.rs3-close').onclick=()=>p.hidden=true;
+    const mode=p.querySelector('#rs3-mode');mode.value=prefs.mode;
+    mode.onchange=e=>{prefs.mode=e.target.value;savePrefs()};
+    const br=p.querySelector('#rs3-browser');br.checked=!!prefs.browser;
+    br.onchange=async e=>{
+      prefs.browser=e.target.checked;
+      if(e.target.checked && 'Notification' in window && Notification.permission!=='granted'){
+        const r=await Notification.requestPermission(); if(r!=='granted') prefs.browser=false;
+        br.checked=prefs.browser;
+      }
+      savePrefs();
+    };
+    p.querySelector('#rs3-enable').onclick=async()=>{
+      if('Notification' in window){
+        const r=await Notification.requestPermission();
+        prefs.browser=r==='granted';br.checked=prefs.browser;savePrefs();
+        showPopup('Notificações',r==='granted'?'Notificações do dispositivo ativadas.':'Permissão não concedida.');
+      }
+    };
+    p.querySelector('#rs3-test').onclick=()=>notify('Teste de notificação','O RafahStudio está configurado para avisar sobre novos briefings.');
+    return p;
+  }
+  function openPanel(){
+    const p=ensurePanel();p.hidden=false;renderPanel();
+  }
+  window.RafahStudioNotify=notify;
+  window.RafahStudioOpenNotifications=openPanel;
+  window.addEventListener('rafah:new-briefing',e=>{
+    const d=e.detail||{};
+    notify('Novo briefing recebido',`${d.project_name||'Novo projeto'}${d.client_name?' • '+d.client_name:''}`);
+  });
+  window.addEventListener('load',()=>{
+    document.addEventListener('click',e=>{
+      const b=e.target.closest?.('#notificationBtn,.notification-trigger,[data-notifications],[data-action="notifications"],.notification-button,.notifications-btn');
+      if(b){e.preventDefault();e.stopPropagation();openPanel();}
+    },true);
+    renderPanel();
+  });
 })();
