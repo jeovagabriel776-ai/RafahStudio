@@ -1,0 +1,1 @@
+Correção segura: login/Supabase original preservado; logo única na tela de login; notificações integradas ao sistema original; histórico isolado por conta; marcar como lidas; excluir individual/lidas/todas; modos som/sem som/voz/som+voz; teste somente popup.

@@ -130,7 +130,7 @@
     </main>
   </div>
 
-  <div id="notificationPanel" class="notification-panel"><div class="panel-head"><div><b>Notificações</b><small>Atividade recente do seu workspace.</small></div><button class="text-btn" id="markReadBtn">Marcar todas como lidas</button></div><div id="notificationsList"></div></div>
+  <div id="notificationPanel" class="notification-panel"><div class="panel-head"><div><b>Notificações</b><small>Atividade recente do seu workspace.</small></div><button class="text-btn" id="markReadBtn">Marcar todas como lidas</button></div><div class="notification-toolbar"><button type="button" class="text-btn" id="deleteReadBtn">Excluir lidas</button><button type="button" class="text-btn danger" id="deleteAllNotificationsBtn">Excluir todas</button></div><div id="notificationsList"></div><div class="notification-settings"><label>Como você quer ser avisado?<select id="notificationMode"><option value="sound">🔊 Som de notificação</option><option value="silent">🔇 Sem som</option><option value="voice">🗣️ Com voz</option><option value="sound_voice">🔊🗣️ Som + voz</option></select></label><button type="button" class="text-btn" id="testNotificationBtn">Testar aviso (somente popup)</button></div></div>
   <div id="overlay" class="overlay hidden"></div>
   <div id="modalRoot"></div>
   <div id="uploadProgress" class="upload-progress hidden" aria-live="polite"><div class="upload-progress-card"><div class="upload-progress-icon">↑</div><div class="upload-progress-content"><b id="uploadProgressTitle">Enviando arquivo…</b><small id="uploadProgressText">Aguarde enquanto atualizamos sua imagem.</small><div class="upload-progress-track"><span id="uploadProgressBar"></span></div></div><strong id="uploadProgressPercent">0%</strong></div></div>
