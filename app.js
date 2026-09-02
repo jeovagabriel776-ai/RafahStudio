@@ -607,14 +607,14 @@ function openOrder(order=null){
     <div class="order-editor-section"><div class="order-editor-head"><div><b>Arte pronta / arquivo final</b><small>Você pode anexar a arte pronta para visualizar no pedido e depois colocar no catálogo.</small></div></div><label class="upload-zone"><input id="manualReadyArt" type="file" accept="image/*,.pdf"><span class="upload-icon">↑</span><b>Adicionar arte pronta</b><small>${readyArt?.name?`Atual: ${esc(readyArt.name)}`:'Imagem ou PDF da arte final'}</small></label><div id="manualReadyPreview" class="ready-art-preview">${readyArt?.url||readyArt?.dataUrl?`<img src="${esc(readyArt.url||readyArt.dataUrl)}" alt="Arte pronta">`:''}</div></div>
     <div class="modal-actions"><button type="button" class="btn secondary" data-close-modal>Cancelar</button><button class="btn primary" type="submit">Salvar pedido</button></div>
   </form>`);
-  const paint=()=>{$('#manualPeopleList').innerHTML=people.map((p,i)=>`<div class="manual-person-row"><span class="person-num">${i+1}</span><input data-mp-name="${i}" value="${esc(p.name||'')}" placeholder="Nome da pessoa"><input data-mp-info="${i}" value="${esc(p.info||'')}" placeholder="Função / observação"><label class="mini-upload">Foto<input data-mp-photo="${i}" type="file" accept="image/*"></label><button type="button" class="icon-action danger" data-mp-remove="${i}">×</button></div>`).join('')||'<div class="stage-empty">Nenhuma pessoa adicionada.</div>';};
+  const paint=()=>{$('#manualPeopleList').innerHTML=people.map((p,i)=>{const photoSrc=p.photo?.dataUrl||p.photo?.url||'';return `<div class="manual-person-row"><span class="person-num">${i+1}</span>${photoSrc?`<img class="manual-person-preview" src="${esc(photoSrc)}" alt="Foto de ${esc(p.name||`Pessoa ${i+1}`)}">`:`<span class="manual-person-preview empty">👤</span>`}<input data-mp-name="${i}" value="${esc(p.name||'')}" placeholder="Nome da pessoa"><input data-mp-info="${i}" value="${esc(p.info||'')}" placeholder="Função / observação"><label class="mini-upload">Foto<input data-mp-photo="${i}" type="file" accept="image/*"></label><button type="button" class="icon-action danger" data-mp-remove="${i}">×</button></div>`;}).join('')||'<div class="stage-empty">Nenhuma pessoa adicionada.</div>';};
   paint();
   $('#manualAddPerson').onclick=()=>{people.push({name:'',info:'',photo:null});paint();};
   $('#manualPeopleList').oninput=e=>{const i=e.target.dataset.mpName??e.target.dataset.mpInfo;if(i!==undefined){if(e.target.dataset.mpName!==undefined)people[i].name=e.target.value;else people[i].info=e.target.value;}};
-  $('#manualPeopleList').onchange=async e=>{const i=e.target.dataset.mpPhoto;if(i!==undefined&&e.target.files[0]){people[i].photo={name:e.target.files[0].name,type:e.target.files[0].type,size:e.target.files[0].size,file:e.target.files[0]};}};
+  $('#manualPeopleList').onchange=async e=>{const i=e.target.dataset.mpPhoto;if(i!==undefined&&e.target.files[0]){const file=e.target.files[0];const dataUrl=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(file);});people[i].photo={name:file.name,type:file.type,size:file.size,file,dataUrl};paint();}};
   $('#manualPeopleList').onclick=e=>{const b=e.target.closest('[data-mp-remove]');if(b){people.splice(Number(b.dataset.mpRemove),1);paint();}};
   $('#manualReadyArt').onchange=e=>{const f=e.target.files[0];if(!f)return;readyArt={name:f.name,type:f.type,size:f.size,file:f};const p=$('#manualReadyPreview');if(f.type.startsWith('image/')){const r=new FileReader();r.onload=()=>p.innerHTML=`<img src="${r.result}" alt="Arte pronta">`;r.readAsDataURL(f);}else p.innerHTML=`<div class="file-generic">${esc(f.name)}</div>`;};
-  $('#orderForm').onsubmit=async e=>{e.preventDefault();await saveOrder(o,people,readyArt);};
+  $('#orderForm').onsubmit=async e=>{e.preventDefault();await saveOrder(order,people,readyArt);};
 }
 async function uploadOrderAsset(file,orderId,label){
   if(!supabaseClient)throw new Error('Supabase não está disponível para enviar arquivos.');
@@ -657,7 +657,7 @@ async function saveOrder(existing,peopleDraft=[],readyArtDraft=null){
       clients.unshift({id:uid('cli'),name:data.client,company:'',whats:'',email:'',instagram:'',notes:'Cliente cadastrado pelo pedido',created:todayISO(),origin:'Manual'});
     }
     persist();closeModal();render();go('pedidos');if(hasUploads)hideUploadProgress(true);toast(existing?'Pedido atualizado.':'Pedido criado.');
-  }catch(err){if(hasUploads)hideUploadProgress(false);toast(err?.message||'Não foi possível salvar o pedido.','error');}
+  }catch(err){if(hasUploads)hideUploadProgress(false);console.error('[RafahStudio] Falha ao salvar pedido:',err);toast(err?.message||'Não foi possível salvar o pedido. Tente novamente.','error');}
   finally{if(btn){btn.disabled=false;btn.textContent='Salvar pedido';}}
 }
 function addHistory(o,text){o.history=o.history||[];o.history.unshift({id:uid('hist'),at:new Date().toISOString(),text});}

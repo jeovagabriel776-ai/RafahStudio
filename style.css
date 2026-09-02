@@ -392,3 +392,19 @@ body{background:
 .public-social span svg{width:20px;height:20px;display:block}.public-social{display:flex;align-items:center;gap:9px}.public-social small{font-size:10px}.public-social:hover{color:var(--accent)}
 
 .status-finalized{background:#17304a;color:#8fefff}.dark .status-finalized{background:#16334a;color:#8fefff}
+
+/* FIX FINAL — PEDIDOS MANUAIS E FOTOS */
+.manual-person-row{
+  grid-template-columns:30px 46px minmax(120px,1fr) minmax(120px,1fr) auto 32px!important;
+  align-items:center!important;
+}
+.manual-person-preview{
+  width:42px;height:42px;border-radius:12px;object-fit:cover;
+  border:1px solid var(--line);background:var(--surface-2);display:grid;place-items:center;
+}
+.manual-person-preview.empty{color:var(--muted);font-size:16px}
+@media(max-width:700px){
+  .manual-person-row{grid-template-columns:30px 42px 1fr 32px!important}
+  .manual-person-row input[data-mp-info]{grid-column:3/5}
+  .manual-person-row .mini-upload{grid-column:3/5}
+}
