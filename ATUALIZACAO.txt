@@ -1,1 +1,17 @@
-Correção segura: login/Supabase original preservado; logo única na tela de login; notificações integradas ao sistema original; histórico isolado por conta; marcar como lidas; excluir individual/lidas/todas; modos som/sem som/voz/som+voz; teste somente popup.
+RAFAHSTUDIO — GLOW-UP + PEDIDOS COMPLETOS
+
+Atualização desta versão:
+- Pedido manual completo: cliente, projeto, prazo, valor, serviço, status, prioridade, pessoas e arte pronta.
+- Fotos de pessoas adicionadas manualmente ficam junto do pedido.
+- Arte pronta aparece no cartão da etapa e na visualização do pedido.
+- Nova etapa FINALIZADO depois de PAGO.
+- Pedidos continuam organizados por etapas em colunas horizontais.
+- Arte final pode ser adicionada ao Catálogo a partir do pedido pago/finalizado.
+- Catálogo público abre em uma área expansível dentro do briefing e permite selecionar/desmarcar referências.
+- Link de briefing ficou curto: somente o token vai na URL; perfil público fica no Supabase.
+- Perfil público pode exibir banner e redes sociais.
+- Notificação com popup, som, voz, som+voz ou silenciosa.
+- Som usa Web Audio e é desbloqueado após interação do usuário; o botão de teste toca o som imediatamente.
+- Notificação do sistema operacional é usada para novos briefings quando o navegador permitir.
+- Efeitos suaves de carregamento, vidro, gradientes e microinterações.
+- Login e autenticação existentes foram preservados.

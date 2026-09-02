@@ -3,7 +3,7 @@ const $ = (s, root=document) => root.querySelector(s);
 const $$ = (s, root=document) => [...root.querySelectorAll(s)];
 const APP = 'rafahstudio';
 const KEYS = { user:`${APP}:user`, theme:`${APP}:theme`, designer:`${APP}:designer`, orders:`${APP}:orders`, clients:`${APP}:clients`, quotes:`${APP}:quotes`, catalog:`${APP}:catalog`, notifications:`${APP}:notifications`, trash:`${APP}:trash`, deletedRemote:`${APP}:deleted-remote`, deletedRemoteFingerprints:`${APP}:deleted-remote-fingerprints` };
-const STATUS = ['Novo','Em andamento','Esperando aprovação','Alteração','Entregue','Pago'];
+const STATUS = ['Novo','Em andamento','Esperando aprovação','Alteração','Entregue','Pago','Finalizado'];
 const QUOTE_STATUS = ['Rascunho','Enviado','Aprovado','Recusado'];
 const todayISO = () => new Date().toISOString().slice(0,10);
 const money = v => new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(v)||0);
@@ -42,7 +42,18 @@ function randomToken(){return (crypto.randomUUID?.()||uid('tok'))+'-'+Math.rando
 function accountScopeId(){return currentUser?.id||currentUser?.user||currentUser?.email||currentUser?.username||'default';}
 function getOwnerToken(){const u=accountScopeId();let t=localStorage.getItem(ownerTokenKey(u));if(!t){t=randomToken();localStorage.setItem(ownerTokenKey(u),t);}return t;}
 function getPublicToken(){const u=accountScopeId();let t=localStorage.getItem(publicTokenKey(u));if(!t){t=randomToken();localStorage.setItem(publicTokenKey(u),t);}return t;}
-function briefingTokenFromHash(){try{const h=location.hash.slice('#briefing='.length);if(!h)return '';const p=JSON.parse(decodeURIComponent(escape(atob(h))));return p.publicToken||'';}catch{return '';}}
+function briefingTokenFromHash(){
+  try{
+    if(!location.hash.startsWith('#briefing='))return '';
+    const raw=decodeURIComponent(location.hash.slice('#briefing='.length));
+    if(raw.startsWith('{')){const p=JSON.parse(raw);return p.publicToken||'';}
+    try{
+      const decoded=decodeURIComponent(escape(atob(raw)));
+      if(decoded.trim().startsWith('{'))return JSON.parse(decoded).publicToken||'';
+    }catch(e){}
+    return raw;
+  }catch{return '';}
+}
 async function uploadBriefingFile(file, publicToken, briefingId, index){
   if(!supabaseClient) throw new Error('Biblioteca do Supabase não carregou.');
   const safeName=(file.name||`arquivo-${index}`).replace(/[^a-zA-Z0-9._-]/g,'_');
@@ -273,9 +284,10 @@ function migrateLegacy(){
 function normalizeStatus(s){
   if(s==='Aprovação'||s==='Aprovado') return s==='Aprovado'?'Esperando aprovação':'Esperando aprovação';
   if(s==='Pago') return 'Pago';
+  if(s==='Finalizado'||s==='Finalizada') return 'Finalizado';
   return STATUS.includes(s)?s:'Novo';
 }
-function normalizeOrder(o){ return {id:o.id||uid('ord'),remoteId:o.remoteId||'',remoteCreated:o.remoteCreated||'',client:o.client||'',project:o.project||'Sem projeto',deadline:o.deadline||'',value:Number(o.value)||0,type:o.type||'Outro',status:normalizeStatus(o.status),created:o.created||todayISO(),paid:Boolean(o.paid||o.status==='Pago'),origin:o.origin||'Manual',priority:o.priority||'Normal',briefing:o.briefing||{},files:Array.isArray(o.files)?o.files:[],history:Array.isArray(o.history)?o.history:[]}; }
+function normalizeOrder(o){ return {id:o.id||uid('ord'),remoteId:o.remoteId||'',remoteCreated:o.remoteCreated||'',client:o.client||'',project:o.project||'Sem projeto',deadline:o.deadline||'',value:Number(o.value)||0,type:o.type||'Outro',status:normalizeStatus(o.status),created:o.created||todayISO(),paid:Boolean(o.paid||o.status==='Pago'||o.status==='Finalizado'),origin:o.origin||'Manual',priority:o.priority||'Normal',briefing:o.briefing||{},files:Array.isArray(o.files)?o.files:[],people:Array.isArray(o.people)?o.people:[],readyArt:o.readyArt||null,history:Array.isArray(o.history)?o.history:[]}; }
 migrateLegacy();
 
 function scopedKey(base){ return `${base}:${currentUser?.id||currentUser?.user||currentUser?.email||'guest'}`; }
@@ -324,15 +336,56 @@ function closeModal(){
   backdrop.classList.remove('is-visible');
   setTimeout(()=>{root.innerHTML='';document.body.classList.remove('modal-open');},150);
 }
-function getNotificationPrefs(){const key=`${APP}:notification-prefs:${accountScopeId()}`;try{return {...{mode:'sound'},...JSON.parse(localStorage.getItem(key)||'{}')}}catch{return {mode:'sound'}}}
+function getNotificationPrefs(){const key=`${APP}:notification-prefs:${accountScopeId()}`;try{return {...{mode:'sound',sound:'suave'},...JSON.parse(localStorage.getItem(key)||'{}')}}catch{return {mode:'sound',sound:'suave'}}}
 function saveNotificationPrefs(v){localStorage.setItem(`${APP}:notification-prefs:${accountScopeId()}`,JSON.stringify(v));}
 let notificationAudioCtx=null;
-function playNotificationSound(){const mode=getNotificationPrefs().mode;if(mode!=='sound'&&mode!=='sound_voice')return;try{notificationAudioCtx=notificationAudioCtx||new (window.AudioContext||window.webkitAudioContext)();if(notificationAudioCtx.state==='suspended')notificationAudioCtx.resume().catch(()=>{});const t=notificationAudioCtx.currentTime;[0,.16].forEach((d,i)=>{const o=notificationAudioCtx.createOscillator(),g=notificationAudioCtx.createGain();o.type='sine';o.frequency.value=i?740:520;g.gain.setValueAtTime(.0001,t+d);g.gain.exponentialRampToValueAtTime(.075,t+d+.018);g.gain.exponentialRampToValueAtTime(.0001,t+d+.14);o.connect(g);g.connect(notificationAudioCtx.destination);o.start(t+d);o.stop(t+d+.16);});}catch(e){}}
+function unlockNotificationAudio(){
+  try{
+    const AC=window.AudioContext||window.webkitAudioContext;
+    if(!AC)return false;
+    notificationAudioCtx=notificationAudioCtx||new AC();
+    if(notificationAudioCtx.state==='suspended')notificationAudioCtx.resume().catch(()=>{});
+    return true;
+  }catch(e){return false;}
+}
+function playNotificationSound(force=false){
+  const prefs=getNotificationPrefs(),mode=prefs.mode;
+  if(!force&&mode!=='sound'&&mode!=='sound_voice')return;
+  try{
+    if(!unlockNotificationAudio())return;
+    const ctx=notificationAudioCtx,t=ctx.currentTime;
+    const patterns={
+      suave:[[520,0,.12],[740,.15,.14],[880,.30,.12]],
+      digital:[[620,0,.07],[920,.09,.07],[620,.18,.07],[920,.27,.09]],
+      sino:[[660,0,.18],[880,.18,.24],[660,.48,.18]]
+    };
+    (patterns[prefs.sound]||patterns.suave).forEach(([freq,d,dur])=>{
+      const o=ctx.createOscillator(),g=ctx.createGain();
+      o.type=prefs.sound==='digital'?'square':'sine';
+      o.frequency.setValueAtTime(freq,t+d);
+      g.gain.setValueAtTime(.0001,t+d);
+      g.gain.exponentialRampToValueAtTime(prefs.sound==='digital'?.045:.09,t+d+.012);
+      g.gain.exponentialRampToValueAtTime(.0001,t+d+dur);
+      o.connect(g);g.connect(ctx.destination);o.start(t+d);o.stop(t+d+dur+.01);
+    });
+  }catch(e){console.warn('Áudio de notificação:',e);}
+}
+function requestDesktopNotifications(){
+  if(!('Notification' in window))return;
+  if(Notification.permission==='default')Notification.requestPermission().catch(()=>{});
+}
+function showDesktopNotification(title,body){
+  if(!('Notification' in window)||Notification.permission!=='granted')return;
+  try{
+    const n=new Notification(title,{body,icon:'assets/logo2.svg',tag:'rafahstudio-briefing'});
+    n.onclick=()=>{window.focus();n.close();go('pedidos');};
+  }catch(e){}
+}
 function speakNotification(text){const mode=getNotificationPrefs().mode;if((mode!=='voice'&&mode!=='sound_voice')||!('speechSynthesis'in window))return;try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.lang='pt-BR';u.rate=.96;u.pitch=1;u.volume=.85;speechSynthesis.speak(u);}catch(e){}}
 function showNotificationPopup(title,body){document.querySelectorAll('.rs-notification-popup').forEach(x=>x.remove());const el=document.createElement('div');el.className='rs-notification-popup';el.innerHTML='<div class="rs-popup-icon">✓</div><div class="rs-popup-body"><b></b><span></span></div><button type="button" aria-label="Fechar">×</button>';el.querySelector('b').textContent=title;el.querySelector('span').textContent=body;el.querySelector('button').onclick=()=>el.remove();document.body.appendChild(el);setTimeout(()=>{if(el.isConnected){el.classList.add('out');setTimeout(()=>el.remove(),260)}},6500);}
-function notify(title,body,kind='info',linkPage='pedidos',linkId=null){notifications.unshift({id:uid('ntf'),title,body,kind,created:new Date().toISOString(),read:false,linkPage,linkId});notifications=notifications.slice(0,80);persist();renderNotifications();showNotificationPopup(title,body);playNotificationSound();speakNotification(`${title}. ${body}`);}
+function notify(title,body,kind='info',linkPage='pedidos',linkId=null){notifications.unshift({id:uid('ntf'),title,body,kind,created:new Date().toISOString(),read:false,linkPage,linkId});notifications=notifications.slice(0,80);persist();renderNotifications();showNotificationPopup(title,body);playNotificationSound();speakNotification(`${title}. ${body}`);if(title==='Novo briefing recebido')showDesktopNotification(title,body);}
 function formatRelative(iso){const diff=Math.max(0,Date.now()-new Date(iso).getTime());const min=Math.floor(diff/60000);if(min<1)return'agora';if(min<60)return`há ${min} min`;const h=Math.floor(min/60);if(h<24)return`há ${h} h`;const d=Math.floor(h/24);return`há ${d} d`;}
-function statusClass(s){return ({'Novo':'status-new','Em andamento':'status-doing','Esperando aprovação':'status-wait','Alteração':'status-change','Entregue':'status-done','Pago':'status-paid'})[s]||'';}
+function statusClass(s){return ({'Novo':'status-new','Em andamento':'status-doing','Esperando aprovação':'status-wait','Alteração':'status-change','Entregue':'status-done','Pago':'status-paid','Finalizado':'status-finalized'})[s]||'';}
 function priorityClass(p){return ({Alta:'priority-high',Urgente:'priority-urgent'})[p]||'';}
 function pageMeta(page){return {dashboard:['VISÃO GERAL','Dashboard'],pedidos:['PROJETOS','Pedidos'],clientes:['RELACIONAMENTO','Clientes'],catalogo:['PORTFÓLIO','Catálogo'],orcamentos:['COMERCIAL','Orçamentos'],financeiro:['FINANCEIRO','Financeiro'],perfil:['SUA CONTA','Meu perfil']}[page]||['','RafahStudio'];}
 function go(page){ $$('.page').forEach(p=>p.classList.toggle('active',p.id===page)); $$('.nav-item[data-page]').forEach(n=>n.classList.toggle('active',n.dataset.page===page)); const [ey,t]=pageMeta(page); $('#pageEyebrow').textContent=ey; $('#pageTitle').textContent=t; $('#notificationPanel').classList.remove('open'); $('#sidebar').classList.remove('mobile-open'); window.scrollTo({top:0,behavior:'smooth'}); }
@@ -344,7 +397,7 @@ function renderIdentity(){
  ['sideAvatar','topAvatar','profileAvatar'].forEach(id=>{const el=$('#'+id); if(!el)return; if(designer.photo){el.innerHTML=`<img src="${designer.photo}" alt="Foto de ${esc(name)}">`}else el.textContent=initials(name);});
 }
 function renderDashboard(){
- const active=orders.filter(o=>!['Entregue','Pago'].includes(o.status)).length;
+ const active=orders.filter(o=>!['Entregue','Pago','Finalizado'].includes(o.status)).length;
  const newBrief=orders.filter(o=>o.origin==='Briefing online'&&o.status==='Novo').length;
  const receive=orders.filter(o=>!o.paid).reduce((a,o)=>a+Number(o.value||0),0);
  const paid=orders.filter(o=>o.paid||o.status==='Pago').reduce((a,o)=>a+Number(o.value||0),0);
@@ -355,7 +408,7 @@ function renderDashboard(){
  orders.filter(o=>o.status==='Alteração').slice(0,3).forEach(o=>attention.push(`<button class="attention-row" data-open-order="${o.id}"><span class="attention-dot orange"></span><div><b>Alteração solicitada</b><small>${esc(o.project)} • ${esc(o.client)}</small></div><span>→</span></button>`));
  $('#attentionList').innerHTML=attention.slice(0,5).join('')||`<div class="empty-mini"><span>✓</span><div><b>Tudo em dia.</b><small>Nenhuma ação urgente encontrada.</small></div></div>`;
  $('#recentOrders').innerHTML=[...orders].sort((a,b)=>b.created.localeCompare(a.created)).slice(0,5).map(o=>`<button class="list-row" data-open-order="${o.id}"><div class="list-project"><span class="project-mark">${esc(initials(o.project))}</span><div><b>${esc(o.project)}</b><small>${esc(o.client)} • ${esc(o.type)}</small></div></div><span class="status-pill ${statusClass(o.status)}">${esc(o.status)}</span><span class="list-date">${dateLabel(o.deadline)}</span></button>`).join('')||`<div class="empty-mini"><span>＋</span><div><b>Nenhum pedido ainda.</b><small>Crie seu primeiro projeto.</small></div></div>`;
- const deadlines=[...orders].filter(o=>o.deadline&&!['Entregue','Pago'].includes(o.status)).sort((a,b)=>a.deadline.localeCompare(b.deadline)).slice(0,5);
+ const deadlines=[...orders].filter(o=>o.deadline&&!['Entregue','Pago','Finalizado'].includes(o.status)).sort((a,b)=>a.deadline.localeCompare(b.deadline)).slice(0,5);
  $('#deadlines').innerHTML=deadlines.map(o=>`<button class="deadline-row" data-open-order="${o.id}"><div><b>${esc(o.project)}</b><small>${esc(o.client)}</small></div><strong class="deadline ${new Date(o.deadline+'T23:59:59')<new Date()?'overdue':''}">${dateLabel(o.deadline)}</strong></button>`).join('')||`<div class="empty-mini"><span>✓</span><div><b>Sem prazos próximos.</b><small>Você está tranquilo por enquanto.</small></div></div>`;
 }
 
@@ -365,9 +418,9 @@ function filteredOrders(){
  const sort=$('#orderSort')?.value||'recent'; list.sort((a,b)=>sort==='deadline'?(a.deadline||'9999').localeCompare(b.deadline||'9999'):sort==='value'?b.value-a.value:sort==='oldest'?a.created.localeCompare(b.created):b.created.localeCompare(a.created)); return list;
 }
 function renderOrders(){
- const counts={all:orders.length,Novo:0,'Em andamento':0,'Esperando aprovação':0,'Alteração':0,Entregue:0,Pago:0};
+ const counts={all:orders.length,Novo:0,'Em andamento':0,'Esperando aprovação':0,'Alteração':0,Entregue:0,Pago:0,Finalizado:0};
  orders.forEach(o=>counts[o.status]=(counts[o.status]||0)+1);
- $('#countAll').textContent=counts.all; $('#countNovo').textContent=counts.Novo; $('#countDoing').textContent=counts['Em andamento']; $('#countApproval').textContent=counts['Esperando aprovação']; $('#countChange').textContent=counts['Alteração']; $('#countDelivered').textContent=counts.Entregue; $('#countPaid').textContent=counts.Pago;
+ $('#countAll').textContent=counts.all; $('#countNovo').textContent=counts.Novo; $('#countDoing').textContent=counts['Em andamento']; $('#countApproval').textContent=counts['Esperando aprovação']; $('#countChange').textContent=counts['Alteração']; $('#countDelivered').textContent=counts.Entregue; $('#countPaid').textContent=counts.Pago; $('#countFinalized').textContent=counts.Finalizado;
  $$('#orderTabs button').forEach(b=>b.classList.toggle('active',b.dataset.filter===orderFilter));
 
  const q=($('#orderSearch')?.value||'').toLowerCase().trim();
@@ -399,6 +452,8 @@ function renderOrders(){
        </div>
        ${o.priority!=='Normal'?`<small class="priority ${priorityClass(o.priority)}">${esc(o.priority)}</small>`:''}
        ${o.origin==='Briefing online'?`<span class="online-badge">Briefing online</span>`:''}
+       ${(o.readyArt?.url||o.readyArt?.dataUrl)?`<div class="order-card-art"><img src="${esc(o.readyArt.url||o.readyArt.dataUrl)}" alt="Arte pronta"><span>Arte pronta</span></div>`:''}
+       ${Array.isArray(o.people)&&o.people.length?`<div class="order-card-people">👤 ${o.people.length} pessoa(s)</div>`:''}
        <div class="order-card-actions">
          <button class="icon-action" title="Voltar etapa" data-move-status="${o.id}" data-direction="-1" ${STATUS.indexOf(o.status)===0?'disabled':''}>←</button>
          <button class="btn secondary small" data-open-order="${o.id}">Abrir</button>
@@ -536,11 +591,78 @@ async function loadRemoteProfile(){
 }
 function showApp(){ $('#authScreen').classList.add('hidden');$('#publicPage').classList.add('hidden');$('#app').classList.remove('hidden');go('dashboard');render(); }
 
-function openOrder(order=null){editingOrderId=order?.id||null; const o=order||{client:'',project:'',deadline:'',value:0,type:'Cartaz',status:'Novo',priority:'Normal',briefing:{},files:[]}; modal(`<div class="modal-head"><div><span class="eyebrow">${editingOrderId?'EDITAR PEDIDO':'NOVO PEDIDO'}</span><h2>${editingOrderId?'Editar projeto':'Criar novo projeto'}</h2></div><button class="close-modal" data-close-modal>×</button></div><form id="orderForm"><div class="two-col"><label>Cliente<input id="orderClient" value="${esc(o.client)}" required></label><label>Projeto<input id="orderProject" value="${esc(o.project)}" required></label></div><div class="two-col"><label>Prazo<input id="orderDeadline" type="date" value="${esc(o.deadline)}"></label><label>Valor<input id="orderValue" type="number" min="0" step="0.01" value="${Number(o.value)||0}"></label></div><div class="two-col"><label>Serviço<select id="orderType">${['Cartaz','Cartaz para igreja/evento','Post para Instagram','Identidade visual','Logo','Outro'].map(x=>`<option ${x===o.type?'selected':''}>${x}</option>`).join('')}</select></label><label>Status<select id="orderStatus">${STATUS.map(x=>`<option ${x===o.status?'selected':''}>${x}</option>`).join('')}</select></label></div><label>Prioridade<select id="orderPriority"><option ${o.priority==='Normal'?'selected':''}>Normal</option><option ${o.priority==='Alta'?'selected':''}>Alta</option><option ${o.priority==='Urgente'?'selected':''}>Urgente</option></select></label><label>Observações / briefing interno<textarea id="orderNotes" rows="6">${esc(typeof o.briefing==='string' ? o.briefing : (o.briefing?.notes||o.briefing?.texts||''))}</textarea></label><div class="modal-actions"><button type="button" class="btn secondary" data-close-modal>Cancelar</button><button class="btn primary" type="submit">Salvar pedido</button></div></form>`);
- $('#orderForm').onsubmit=e=>{e.preventDefault();saveOrder(o);}; }
-function saveOrder(existing){const was=existing?.status; const data={client:$('#orderClient').value.trim(),project:$('#orderProject').value.trim(),deadline:$('#orderDeadline').value,value:Number($('#orderValue').value)||0,type:$('#orderType').value,status:$('#orderStatus').value,priority:$('#orderPriority').value,briefing:{...(existing?.briefing||{}),notes:$('#orderNotes').value},files:existing?.files||[],origin:existing?.origin||'Manual',paid:existing?.paid||false};if(!data.client||!data.project){toast('Cliente e projeto são obrigatórios.','error');return;}if(existing){Object.assign(existing,data); if(existing.status==='Pago')existing.paid=true; if(was!==existing.status)addHistory(existing,`Status alterado de ${was} para ${existing.status}`);}else{const o={id:uid('ord'),...data,created:todayISO(),history:[]};addHistory(o,'Pedido criado');orders.unshift(o);notify('Novo pedido criado',`${data.project} • ${data.client}`,'success','pedidos',o.id);}persist();closeModal();render();go('pedidos');toast(existing?'Pedido atualizado.':'Pedido criado.');}
+function openOrder(order=null){
+  editingOrderId=order?.id||null;
+  const o=order||{client:'',project:'',deadline:'',value:0,type:'Cartaz',status:'Novo',priority:'Normal',briefing:{},files:[],people:[],readyArt:null};
+  const people=Array.isArray(o.people)?JSON.parse(JSON.stringify(o.people)):[];
+  let readyArt=o.readyArt||null;
+  modal(`<div class="modal-head"><div><span class="eyebrow">${editingOrderId?'EDITAR PEDIDO':'NOVO PEDIDO'}</span><h2>${editingOrderId?'Editar projeto':'Criar novo projeto'}</h2><p class="muted">Organize o projeto completo, incluindo pessoas, referências e arte final.</p></div><button class="close-modal" data-close-modal>×</button></div>
+  <form id="orderForm">
+    <div class="two-col"><label>Cliente<input id="orderClient" value="${esc(o.client)}" required></label><label>Projeto<input id="orderProject" value="${esc(o.project)}" required></label></div>
+    <div class="two-col"><label>Prazo<input id="orderDeadline" type="date" value="${esc(o.deadline)}"></label><label>Valor do serviço<input id="orderValue" type="number" min="0" step="0.01" value="${Number(o.value)||0}" placeholder="0,00"></label></div>
+    <div class="two-col"><label>Serviço<select id="orderType">${['Cartaz','Cartaz para igreja/evento','Post para Instagram','Identidade visual','Logo','Social Media','Outro'].map(x=>`<option ${x===o.type?'selected':''}>${x}</option>`).join('')}</select></label><label>Status<select id="orderStatus">${STATUS.map(x=>`<option ${x===o.status?'selected':''}>${x}</option>`).join('')}</select></label></div>
+    <label>Prioridade<select id="orderPriority"><option ${o.priority==='Normal'?'selected':''}>Normal</option><option ${o.priority==='Alta'?'selected':''}>Alta</option><option ${o.priority==='Urgente'?'selected':''}>Urgente</option></select></label>
+    <label>Observações / briefing interno<textarea id="orderNotes" rows="5">${esc(typeof o.briefing==='string' ? o.briefing : (o.briefing?.notes||o.briefing?.texts||''))}</textarea></label>
+    <div class="order-editor-section"><div class="order-editor-head"><div><b>Pessoas da arte</b><small>Adicione nomes e fotos que precisam aparecer no projeto.</small></div><button type="button" class="btn secondary small" id="manualAddPerson">+ Pessoa</button></div><div id="manualPeopleList" class="manual-people-list"></div></div>
+    <div class="order-editor-section"><div class="order-editor-head"><div><b>Arte pronta / arquivo final</b><small>Você pode anexar a arte pronta para visualizar no pedido e depois colocar no catálogo.</small></div></div><label class="upload-zone"><input id="manualReadyArt" type="file" accept="image/*,.pdf"><span class="upload-icon">↑</span><b>Adicionar arte pronta</b><small>${readyArt?.name?`Atual: ${esc(readyArt.name)}`:'Imagem ou PDF da arte final'}</small></label><div id="manualReadyPreview" class="ready-art-preview">${readyArt?.url||readyArt?.dataUrl?`<img src="${esc(readyArt.url||readyArt.dataUrl)}" alt="Arte pronta">`:''}</div></div>
+    <div class="modal-actions"><button type="button" class="btn secondary" data-close-modal>Cancelar</button><button class="btn primary" type="submit">Salvar pedido</button></div>
+  </form>`);
+  const paint=()=>{$('#manualPeopleList').innerHTML=people.map((p,i)=>`<div class="manual-person-row"><span class="person-num">${i+1}</span><input data-mp-name="${i}" value="${esc(p.name||'')}" placeholder="Nome da pessoa"><input data-mp-info="${i}" value="${esc(p.info||'')}" placeholder="Função / observação"><label class="mini-upload">Foto<input data-mp-photo="${i}" type="file" accept="image/*"></label><button type="button" class="icon-action danger" data-mp-remove="${i}">×</button></div>`).join('')||'<div class="stage-empty">Nenhuma pessoa adicionada.</div>';};
+  paint();
+  $('#manualAddPerson').onclick=()=>{people.push({name:'',info:'',photo:null});paint();};
+  $('#manualPeopleList').oninput=e=>{const i=e.target.dataset.mpName??e.target.dataset.mpInfo;if(i!==undefined){if(e.target.dataset.mpName!==undefined)people[i].name=e.target.value;else people[i].info=e.target.value;}};
+  $('#manualPeopleList').onchange=async e=>{const i=e.target.dataset.mpPhoto;if(i!==undefined&&e.target.files[0]){people[i].photo={name:e.target.files[0].name,type:e.target.files[0].type,size:e.target.files[0].size,file:e.target.files[0]};}};
+  $('#manualPeopleList').onclick=e=>{const b=e.target.closest('[data-mp-remove]');if(b){people.splice(Number(b.dataset.mpRemove),1);paint();}};
+  $('#manualReadyArt').onchange=e=>{const f=e.target.files[0];if(!f)return;readyArt={name:f.name,type:f.type,size:f.size,file:f};const p=$('#manualReadyPreview');if(f.type.startsWith('image/')){const r=new FileReader();r.onload=()=>p.innerHTML=`<img src="${r.result}" alt="Arte pronta">`;r.readAsDataURL(f);}else p.innerHTML=`<div class="file-generic">${esc(f.name)}</div>`;};
+  $('#orderForm').onsubmit=async e=>{e.preventDefault();await saveOrder(o,people,readyArt);};
+}
+async function uploadOrderAsset(file,orderId,label){
+  if(!supabaseClient)throw new Error('Supabase não está disponível para enviar arquivos.');
+  const safe=(file.name||label).replace(/[^a-zA-Z0-9._-]/g,'_');
+  const path=`orders/${getOwnerToken()}/${orderId}/${Date.now()}-${label}-${safe}`;
+  const {error}=await supabaseClient.storage.from('briefing-files').upload(path,file,{upsert:false,contentType:file.type||'application/octet-stream'});
+  if(error)throw error;
+  return {name:file.name,type:file.type,size:file.size,path,url:supabaseClient.storage.from('briefing-files').getPublicUrl(path).data.publicUrl};
+}
+async function saveOrder(existing,peopleDraft=[],readyArtDraft=null){
+  const was=existing?.status;
+  const data={client:$('#orderClient').value.trim(),project:$('#orderProject').value.trim(),deadline:$('#orderDeadline').value,value:Number($('#orderValue').value)||0,type:$('#orderType').value,status:$('#orderStatus').value,priority:$('#orderPriority').value,briefing:{...(existing?.briefing||{}),notes:$('#orderNotes').value},files:existing?.files||[],people:existing?.people||[],readyArt:existing?.readyArt||null,origin:existing?.origin||'Manual',paid:existing?.paid||false};
+  if(!data.client||!data.project){toast('Cliente e projeto são obrigatórios.','error');return;}
+  const btn=$('#orderForm button[type="submit"]');if(btn){btn.disabled=true;btn.textContent='Salvando…';}
+  try{
+    const orderId=existing?.id||uid('ord');
+    const hasUploads=peopleDraft.some(p=>p.photo?.file)||(readyArtDraft?.file);
+    if(hasUploads)showUploadProgress('Atualizando pedido…','Enviando pessoas e arte pronta.');
+    data.people=[];
+    for(let i=0;i<peopleDraft.length;i++){
+      const p={name:String(peopleDraft[i].name||'').trim(),info:String(peopleDraft[i].info||'').trim(),photo:null};
+      if(peopleDraft[i].photo?.file)p.photo=await uploadOrderAsset(peopleDraft[i].photo.file,orderId,`person-${i}`);
+      else if(peopleDraft[i].photo?.url||peopleDraft[i].photo?.dataUrl)p.photo=peopleDraft[i].photo;
+      data.people.push(p);
+    }
+    if(readyArtDraft?.file)data.readyArt=await uploadOrderAsset(readyArtDraft.file,orderId,'arte-final');
+    else if(readyArtDraft)data.readyArt=readyArtDraft;
+    if(hasUploads)updateUploadProgress(92,'Salvando o pedido…');
+    if(existing){
+      Object.assign(existing,data);
+      if(existing.status==='Pago'||existing.status==='Finalizado')existing.paid=true;
+      if(was!==existing.status)addHistory(existing,`Status alterado de ${was} para ${existing.status}`);
+    }else{
+      const o={id:orderId,...data,created:todayISO(),history:[]};
+      addHistory(o,'Pedido criado');
+      orders.unshift(o);
+      notify('Novo pedido criado',`${data.project} • ${data.client}`,'success','pedidos',o.id);
+    }
+    if(data.client&&!clients.some(c=>String(c.name||'').trim().toLowerCase()===data.client.toLowerCase())){
+      clients.unshift({id:uid('cli'),name:data.client,company:'',whats:'',email:'',instagram:'',notes:'Cliente cadastrado pelo pedido',created:todayISO(),origin:'Manual'});
+    }
+    persist();closeModal();render();go('pedidos');if(hasUploads)hideUploadProgress(true);toast(existing?'Pedido atualizado.':'Pedido criado.');
+  }catch(err){if(hasUploads)hideUploadProgress(false);toast(err?.message||'Não foi possível salvar o pedido.','error');}
+  finally{if(btn){btn.disabled=false;btn.textContent='Salvar pedido';}}
+}
 function addHistory(o,text){o.history=o.history||[];o.history.unshift({id:uid('hist'),at:new Date().toISOString(),text});}
-function openOrderView(id){const o=orders.find(x=>x.id===id);if(!o)return; const b=o.briefing||{}; modal(`<div class="modal-head"><div><span class="eyebrow">DETALHES DO PEDIDO</span><h2>${esc(o.project)}</h2><p class="muted">${esc(o.client)} • ${esc(o.type)}</p></div><button class="close-modal" data-close-modal>×</button></div><div class="detail-top"><span class="status-pill ${statusClass(o.status)}">${esc(o.status)}</span><div class="detail-actions"><button class="btn secondary" data-edit-order="${o.id}">Editar pedido</button><button class="btn secondary" data-edit-order-client="${o.id}">Editar cliente</button><button class="btn secondary" data-order-pdf="${o.id}">PDF</button>${(o.paid||o.status==='Pago')?`<button class="btn secondary" data-add-catalog-order="${o.id}">▧ Catálogo</button>`:''}<button class="btn primary" data-cycle-status="${o.id}">Avançar status</button></div></div><div class="status-flow">${STATUS.map((s,i)=>`<span class="flow-step ${STATUS.indexOf(o.status)>=i?'done':''}"><i>${STATUS.indexOf(o.status)>=i?'✓':i+1}</i>${s}</span>`).join('')}</div><div class="detail-grid"><div class="detail-card"><b>Resumo</b><dl><div><dt>Cliente</dt><dd>${esc(o.client)}</dd></div><div><dt>Prazo</dt><dd>${dateLabel(o.deadline)}</dd></div><div><dt>Valor</dt><dd>${money(o.value)}</dd></div><div><dt>Pagamento</dt><dd>${o.paid||o.status==='Pago'?'Pago':'Pendente'}</dd></div></dl></div><div class="detail-card"><b>Briefing</b><p class="detail-text">${esc(b.texts||b.notes||'Nenhuma informação adicional registrada.')}</p>${b.refs?`<div class="ref-box"><b>Referências</b><p>${esc(b.refs)}</p></div>`:''}</div></div><div class="detail-card full-detail"><div class="detail-card-head"><b>Arquivos enviados pelo cliente</b><small>${(o.files||[]).length} arquivo(s)</small></div><div id="orderFiles" class="file-gallery">${renderFileGallery(o)}</div></div><div class="detail-card full-detail"><div class="detail-card-head"><b>Pessoas e fotos para a arte</b><small>${Array.isArray(b.people)?b.people.length:0} pessoa(s)</small></div><div class="file-gallery">${renderPeopleGallery(o)}</div></div><div class="detail-card full-detail"><div class="detail-card-head"><b>Histórico</b><small>Atividades do pedido</small></div><div class="history">${(o.history||[]).map(h=>`<div><span></span><p><b>${esc(h.text)}</b><small>${new Date(h.at).toLocaleString('pt-BR')}</small></p></div>`).join('')||'<p class="muted">Sem histórico.</p>'}</div></div><div class="modal-actions"><button class="btn danger-btn" data-delete-order="${o.id}">Excluir pedido</button><button class="btn secondary" data-toggle-paid="${o.id}">${o.paid?'Marcar como pendente':'Marcar como pago'}</button></div>`); }
+function openOrderView(id){const o=orders.find(x=>x.id===id);if(!o)return; const b=o.briefing||{}; modal(`<div class="modal-head"><div><span class="eyebrow">DETALHES DO PEDIDO</span><h2>${esc(o.project)}</h2><p class="muted">${esc(o.client)} • ${esc(o.type)}</p></div><button class="close-modal" data-close-modal>×</button></div><div class="detail-top"><span class="status-pill ${statusClass(o.status)}">${esc(o.status)}</span><div class="detail-actions"><button class="btn secondary" data-edit-order="${o.id}">Editar pedido</button><button class="btn secondary" data-edit-order-client="${o.id}">Editar cliente</button><button class="btn secondary" data-order-pdf="${o.id}">PDF</button>${(o.paid||o.status==='Pago'||o.status==='Finalizado')?`<button class="btn secondary" data-add-catalog-order="${o.id}">▧ Catálogo</button>`:''}<button class="btn primary" data-cycle-status="${o.id}">Avançar status</button></div></div><div class="status-flow">${STATUS.map((s,i)=>`<span class="flow-step ${STATUS.indexOf(o.status)>=i?'done':''}"><i>${STATUS.indexOf(o.status)>=i?'✓':i+1}</i>${s}</span>`).join('')}</div><div class="detail-grid"><div class="detail-card"><b>Resumo</b><dl><div><dt>Cliente</dt><dd>${esc(o.client)}</dd></div><div><dt>Prazo</dt><dd>${dateLabel(o.deadline)}</dd></div><div><dt>Valor</dt><dd>${money(o.value)}</dd></div><div><dt>Pagamento</dt><dd>${o.paid||o.status==='Pago'?'Pago':'Pendente'}</dd></div></dl></div><div class="detail-card"><b>Briefing</b><p class="detail-text">${esc(b.texts||b.notes||'Nenhuma informação adicional registrada.')}</p>${b.refs?`<div class="ref-box"><b>Referências</b><p>${esc(b.refs)}</p></div>`:''}</div></div><div class="detail-card full-detail"><div class="detail-card-head"><b>Arquivos enviados pelo cliente</b><small>${(o.files||[]).length} arquivo(s)</small></div><div id="orderFiles" class="file-gallery">${renderFileGallery(o)}</div></div><div class="detail-card full-detail"><div class="detail-card-head"><b>Pessoas e fotos para a arte</b><small>${(Array.isArray(b.people)?b.people.length:0)+(Array.isArray(o.people)?o.people.length:0)} pessoa(s)</small></div><div class="file-gallery">${renderPeopleGallery(o)}</div></div>
+<div class="detail-card full-detail"><div class="detail-card-head"><b>Arte pronta / final</b><small>${o.readyArt?.name?'Arquivo anexado':'Ainda não anexada'}</small></div>${o.readyArt?.url||o.readyArt?.dataUrl?`<div class="ready-art-detail"><img src="${esc(o.readyArt.url||o.readyArt.dataUrl)}" alt="Arte final"><a class="btn secondary small" href="${esc(o.readyArt.url||o.readyArt.dataUrl)}" target="_blank" rel="noopener">Abrir arte original</a></div>`:`<div class="empty-mini center"><span>▧</span><div><b>Nenhuma arte pronta.</b><small>Edite o pedido para adicionar a arte final.</small></div></div>`}</div><div class="detail-card full-detail"><div class="detail-card-head"><b>Histórico</b><small>Atividades do pedido</small></div><div class="history">${(o.history||[]).map(h=>`<div><span></span><p><b>${esc(h.text)}</b><small>${new Date(h.at).toLocaleString('pt-BR')}</small></p></div>`).join('')||'<p class="muted">Sem histórico.</p>'}</div></div><div class="modal-actions"><button class="btn danger-btn" data-delete-order="${o.id}">Excluir pedido</button><button class="btn secondary" data-toggle-paid="${o.id}">${o.paid?'Marcar como pendente':'Marcar como pago'}</button></div>`); }
 function renderFileGallery(o){
   if(!o.files?.length)return`<div class="empty-mini center"><span>↑</span><div><b>Nenhum arquivo anexado.</b><small>Arquivos enviados pelo cliente aparecerão aqui.</small></div></div>`;
   return o.files.map((f,i)=>{
@@ -550,17 +672,16 @@ function renderFileGallery(o){
   }).join('');
 }
 function renderPeopleGallery(o){
-  const people=Array.isArray(o.briefing?.people)?o.briefing.people:[];
+  const remote=Array.isArray(o.briefing?.people)?o.briefing.people:[];
+  const manual=Array.isArray(o.people)?o.people:[];
+  const people=[...remote,...manual];
   const withPhotos=people.map((p,i)=>({p,i,photo:p?.photo})).filter(x=>x.photo?.url||x.photo?.dataUrl);
-  if(!withPhotos.length)return`<div class="empty-mini center"><span>👤</span><div><b>Nenhuma foto de pessoa enviada.</b><small>As fotos adicionadas pelo cliente aparecerão aqui.</small></div></div>`;
-  return withPhotos.map(({p,i,photo})=>{
-    const src=photo.url||photo.dataUrl;
-    return `<div class="file-tile"><img src="${esc(src)}" alt="${esc(p.name||`Pessoa ${i+1}`)}"><div><b>${esc(p.name||`Pessoa ${i+1}`)}</b><small>${esc(p.info||'Foto para a arte')}</small></div><a class="btn secondary small" href="${esc(src)}" target="_blank" rel="noopener">Abrir original</a></div>`;
-  }).join('');
+  if(!withPhotos.length)return`<div class="empty-mini center"><span>👤</span><div><b>Nenhuma foto de pessoa enviada.</b><small>As fotos adicionadas pelo cliente ou pelo designer aparecerão aqui.</small></div></div>`;
+  return withPhotos.map(({p,i,photo})=>{const src=photo.url||photo.dataUrl;return `<div class="file-tile"><img src="${esc(src)}" alt="${esc(p.name||`Pessoa ${i+1}`)}"><div><b>${esc(p.name||`Pessoa ${i+1}`)}</b><small>${esc(p.info||'Foto para a arte')}</small></div><a class="btn secondary small" href="${esc(src)}" target="_blank" rel="noopener">Abrir original</a></div>`;}).join('');
 }
 function formatBytes(n){if(!n)return'arquivo';const u=['B','KB','MB','GB'];let i=0,x=n;while(x>=1024&&i<u.length-1){x/=1024;i++;}return`${x.toFixed(i?1:0)} ${u[i]}`;}
-function cycleStatus(id){const o=orders.find(x=>x.id===id);if(!o)return;const i=STATUS.indexOf(o.status);const next=STATUS[Math.min(i+1,STATUS.length-1)];if(next===o.status){toast('O pedido já está no status final.','info');return;}const old=o.status;o.status=next;if(next==='Pago')o.paid=true;addHistory(o,`Status alterado de ${old} para ${next}`);persist();render();closeModal();notify(`Status atualizado: ${next}`,`${o.project} • ${o.client}`,'info','pedidos',o.id);toast(`Pedido movido para ${next}.`);}
-function togglePaid(id){const o=orders.find(x=>x.id===id);if(!o)return;o.paid=!o.paid;if(o.paid){o.status='Pago';addHistory(o,'Pagamento recebido');notify('Pagamento recebido',`${o.project} • ${money(o.value)}`,'success','pedidos',o.id);}else{if(o.status==='Pago')o.status='Entregue';addHistory(o,'Pagamento marcado como pendente');}persist();render();toast(o.paid?'Pagamento registrado.':'Pagamento desmarcado.');}
+function cycleStatus(id){const o=orders.find(x=>x.id===id);if(!o)return;const i=STATUS.indexOf(o.status);const next=STATUS[Math.min(i+1,STATUS.length-1)];if(next===o.status){toast('O pedido já está no status final.','info');return;}const old=o.status;o.status=next;if(next==='Pago'||next==='Finalizado')o.paid=true;addHistory(o,`Status alterado de ${old} para ${next}`);persist();render();closeModal();notify(`Status atualizado: ${next}`,`${o.project} • ${o.client}`,'info','pedidos',o.id);toast(`Pedido movido para ${next}.`);}
+function togglePaid(id){const o=orders.find(x=>x.id===id);if(!o)return;o.paid=!o.paid;if(o.paid){o.status='Pago';addHistory(o,'Pagamento recebido');notify('Pagamento recebido',`${o.project} • ${money(o.value)}`,'success','pedidos',o.id);}else{if(o.status==='Pago'||o.status==='Finalizado')o.status='Entregue';addHistory(o,'Pagamento marcado como pendente');}persist();render();toast(o.paid?'Pagamento registrado.':'Pagamento desmarcado.');}
 function moveStatus(id,direction){
   const o=orders.find(x=>x.id===id); if(!o)return;
   const i=STATUS.indexOf(o.status);
@@ -568,8 +689,8 @@ function moveStatus(id,direction){
   if(nextIndex===i){toast(direction<0?'O pedido já está na primeira etapa.':'O pedido já está na etapa final.','info');return;}
   const old=o.status, next=STATUS[nextIndex];
   o.status=next;
-  if(next==='Pago')o.paid=true;
-  if(old==='Pago'&&next!=='Pago')o.paid=false;
+  if(next==='Pago'||next==='Finalizado')o.paid=true;
+  if(old==='Pago'&&next!=='Pago'&&next!=='Finalizado')o.paid=false;
   addHistory(o,`Pedido movido de ${old} para ${next}`);
   persist(); render();
   notify(`Pedido movido para ${next}`,`${o.project} • ${o.client}`,'info','pedidos',o.id);
@@ -645,42 +766,56 @@ function quoteToOrder(id){const q=quotes.find(x=>x.id===id);if(!q)return;const o
 
 async function generateLink(){
   if(!(await ensurePublicLink())) return '';
-
-  const payload={
-    v:6,
-    designer:designer.name||'Designer',
-    publicToken:getPublicToken(),
-    profile:{
-      name:designer.name||'Designer',
-      whats:designer.whats||'',
-      insta:designer.insta||'',
-      portfolio:designer.portfolio||'',
-      email:designer.email||'',
-      banner:designer.banner||''
-    }
-  };
-  const encoded=btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+  const publicToken=getPublicToken();
+  await syncPublicProfileLink(publicToken);
   const baseUrl=location.href.split('#')[0];
-  const url=`${baseUrl}#briefing=${encoded}`;
-
+  const url=`${baseUrl}#briefing=${encodeURIComponent(publicToken)}`;
   $('#briefingLinkBox').classList.remove('hidden');
   $('#briefingLinkBox').innerHTML=
     `<div><b>Seu link de briefing</b><small>Envie este link ao cliente. O formulário não mostra valores.</small><code>${esc(url)}</code></div>`+
     `<button type="button" class="btn primary" data-copy-text="${esc(url)}">Copiar link</button>`;
-
   return url;
+}
+async function syncPublicProfileLink(token=getPublicToken()){
+  if(!supabaseClient||!currentUser||!token)return false;
+  try{
+    const {error}=await supabaseClient.rpc('save_public_profile_link',{
+      p_public_token:token,
+      p_owner_secret:getOwnerToken(),
+      p_name:designer.name||'Designer',
+      p_whatsapp:designer.whats||'',
+      p_instagram:designer.insta||'',
+      p_portfolio:designer.portfolio||'',
+      p_email:designer.email||'',
+      p_banner:designer.banner||''
+    });
+    if(error)throw error;
+    return true;
+  }catch(e){console.warn('[RafahStudio] Perfil público:',e);return false;}
 }
 function copyText(text){navigator.clipboard?.writeText(text).then(()=>toast('Link copiado.')).catch(()=>{const ta=document.createElement('textarea');ta.value=text;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();toast('Link copiado.');});}
 function openPublic(){ $('#authScreen').classList.add('hidden');$('#app').classList.add('hidden');$('#publicPage').classList.remove('hidden'); }
 function handlePublicHash(){const raw=location.hash.startsWith('#briefing=');if(!raw)return false;openPublic();return true;}
 async function readFiles(fileList){const arr=[];for(const f of [...fileList]){if(f.size>8*1024*1024){toast(`${f.name} é maior que 8 MB e não foi anexado.`,'error');continue;}const data=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(f);});arr.push({id:uid('file'),name:f.name,type:f.type,size:f.size,dataUrl:data,file:f});}return arr;}
+let publicProfileCache={};
 function publicProfileFromHash(){
+  if(publicProfileCache&&Object.keys(publicProfileCache).length)return publicProfileCache;
   try{
-    const raw=location.hash.slice('#briefing='.length);
-    if(!raw)return {};
-    const p=JSON.parse(decodeURIComponent(escape(atob(raw))));
+    const raw=decodeURIComponent(location.hash.slice('#briefing='.length));
+    const decoded=raw.startsWith('{')?raw:decodeURIComponent(escape(atob(raw)));
+    const p=JSON.parse(decoded);
     return p.profile||{};
   }catch{return {};}
+}
+async function fetchPublicProfile(){
+  const token=briefingTokenFromHash();
+  if(!token||!supabaseClient)return {};
+  try{
+    const {data,error}=await supabaseClient.rpc('get_public_profile_for_token',{p_public_token:token});
+    if(error)throw error;
+    publicProfileCache=Array.isArray(data)?(data[0]||{}):(data||{});
+  }catch(e){console.warn('Perfil público:',e);}
+  return publicProfileCache||{};
 }
 function socialUrl(kind,value){
   const v=String(value||'').trim();
@@ -691,15 +826,22 @@ function socialUrl(kind,value){
   if(kind==='email')return `mailto:${v}`;
   return v.startsWith('www.')?`https://${v}`:`https://${v}`;
 }
-function renderPublicSocials(){
-  const p=publicProfileFromHash();
+function socialIcon(kind){
+  const common='viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"';
+  if(kind==='whatsapp')return `<svg ${common}><path d="M20 11.5a8.5 8.5 0 0 1-12.9 7.3L4 20l1.3-3.1A8.5 8.5 0 1 1 20 11.5Z"/><path d="M8.2 8.1c.3-.4.7-.4 1-.1l1 .9c.3.3.3.6.1.9l-.5.7c.6 1.2 1.5 2 2.7 2.6l.7-.5c.3-.2.7-.2.9.1l.9 1c.3.3.2.8-.1 1-.6.5-1.4.7-2.1.5-3.5-.9-5.7-3.2-6.7-6.7-.2-.8 0-1.6.5-2.1Z"/></svg>`;
+  if(kind==='instagram')return `<svg ${common}><rect x="3.5" y="3.5" width="17" height="17" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.7" r=".7" fill="currentColor" stroke="none"/></svg>`;
+  if(kind==='portfolio')return `<svg ${common}><path d="M4 5.5h16v13H4z"/><path d="M8 5.5V4h8v1.5M8 12h8M8 15h5"/></svg>`;
+  return `<svg ${common}><rect x="3" y="5" width="18" height="14" rx="3"/><path d="m4.5 6.5 7.5 6 7.5-6"/></svg>`;
+}
+function renderPublicSocials(profile=publicProfileFromHash()){
+  const p=profile||{};
   const dock=$('#publicSocialDock');
   const success=$('#successSocials');
   const items=[
-    {key:'whatsapp',label:'WhatsApp',icon:'◔',value:p.whats,href:socialUrl('whatsapp',p.whats)},
-    {key:'instagram',label:'Instagram',icon:'◎',value:p.insta,href:socialUrl('instagram',p.insta)},
-    {key:'portfolio',label:'Portfólio',icon:'↗',value:p.portfolio,href:socialUrl('portfolio',p.portfolio)},
-    {key:'email',label:'E-mail',icon:'✉',value:p.email,href:socialUrl('email',p.email)}
+    {key:'whatsapp',label:'WhatsApp',icon:socialIcon('whatsapp'),value:p.whatsapp||p.whats,href:socialUrl('whatsapp',p.whatsapp||p.whats)},
+    {key:'instagram',label:'Instagram',icon:socialIcon('instagram'),value:p.instagram||p.insta,href:socialUrl('instagram',p.instagram||p.insta)},
+    {key:'portfolio',label:'Portfólio',icon:socialIcon('portfolio'),value:p.portfolio,href:socialUrl('portfolio',p.portfolio)},
+    {key:'email',label:'E-mail',icon:socialIcon('email'),value:p.email,href:socialUrl('email',p.email)}
   ].filter(x=>x.value&&x.href);
   const html=items.map(x=>`<a class="public-social" href="${esc(x.href)}" target="_blank" rel="noopener noreferrer" aria-label="${esc(x.label)}" title="${esc(x.label)}"><span>${x.icon}</span><small>${esc(x.label)}</small></a>`).join('');
   if(dock)dock.innerHTML=html;
@@ -708,16 +850,18 @@ function renderPublicSocials(){
   }
 }
 async function loadPublicProfile(){
-  const p=publicProfileFromHash();
-  const topLogo=$('#publicLogo');
-  if(topLogo&&p.banner){ /* banner belongs to the profile, not the logo */ }
-  renderPublicSocials();
+  const p=await fetchPublicProfile();
+  const cover=$('#publicProfileBanner');
+  if(cover){cover.style.backgroundImage=p.banner?`url("${p.banner}")`:'';cover.classList.toggle('has-image',!!p.banner);}
+  const name=$('#publicDesignerName');if(name)name.textContent=p.name||'Designer';
+  renderPublicSocials(p);
 }
 function setupPublic(){
   let people=[];let publicCatalog=[];let selectedCatalog=[];
+  $('#publicCatalogToggle')?.addEventListener('click',()=>{const d=$('#publicCatalogDrawer');if(!d)return;d.classList.toggle('hidden');const b=$('#publicCatalogToggle');b.classList.toggle('open',!d.classList.contains('hidden'));});
   $('#publicFormView')?.classList.remove('hidden');
   $('#publicSuccess')?.classList.add('hidden');
-  async function loadPublicCatalog(){const token=briefingTokenFromHash();if(!token||!supabaseClient)return;try{const {data,error}=await supabaseClient.rpc('get_catalog_for_public',{p_public_token:token});if(error)throw error;publicCatalog=Array.isArray(data)?data:[];const sec=$('#publicCatalogSection'),grid=$('#publicCatalogGrid');if(!publicCatalog.length){sec?.classList.add('hidden');return;}sec?.classList.remove('hidden');grid.innerHTML=publicCatalog.map(x=>`<button type="button" class="public-catalog-item" data-catalog-id="${x.id}"><span class="public-catalog-image"><img src="${esc(x.image_url)}" alt="${esc(x.title)}"></span><span><b>${esc(x.title)}</b><small>${esc(x.description||'')}</small></span><i>✓</i></button>`).join('');grid.querySelectorAll('[data-catalog-id]').forEach(btn=>btn.onclick=()=>{const id=btn.dataset.catalogId;const found=publicCatalog.find(x=>String(x.id)===String(id));if(!found)return;const exists=selectedCatalog.some(x=>String(x.id)===String(id));if(exists){selectedCatalog=selectedCatalog.filter(x=>String(x.id)!==String(id));btn.classList.remove('selected');}else{selectedCatalog.push(found);btn.classList.add('selected');}$('#catalogSelectionNote').textContent=selectedCatalog.length?`Selecionadas: ${selectedCatalog.map(x=>x.title).join(', ')}`:'Nenhuma arte selecionada.';});}catch(e){console.warn('Catálogo público:',e);}}
+  async function loadPublicCatalog(){const token=briefingTokenFromHash();if(!token||!supabaseClient)return;try{const {data,error}=await supabaseClient.rpc('get_catalog_for_public',{p_public_token:token});if(error)throw error;publicCatalog=Array.isArray(data)?data:[];const sec=$('#publicCatalogSection'),grid=$('#publicCatalogGrid');if(!publicCatalog.length){sec?.classList.add('hidden');return;}sec?.classList.remove('hidden');const drawer=$('#publicCatalogDrawer');if(drawer)drawer.classList.add('hidden');grid.innerHTML=publicCatalog.map(x=>`<button type="button" class="public-catalog-item" data-catalog-id="${x.id}"><span class="public-catalog-image"><img src="${esc(x.image_url)}" alt="${esc(x.title)}"></span><span><b>${esc(x.title)}</b><small>${esc(x.description||'')}</small></span><i>✓</i></button>`).join('');grid.querySelectorAll('[data-catalog-id]').forEach(btn=>btn.onclick=()=>{const id=btn.dataset.catalogId;const found=publicCatalog.find(x=>String(x.id)===String(id));if(!found)return;const exists=selectedCatalog.some(x=>String(x.id)===String(id));if(exists){selectedCatalog=selectedCatalog.filter(x=>String(x.id)!==String(id));btn.classList.remove('selected');}else{selectedCatalog.push(found);btn.classList.add('selected');}$('#catalogSelectionNote').textContent=selectedCatalog.length?`Selecionadas: ${selectedCatalog.map(x=>x.title).join(', ')}`:'Nenhuma arte selecionada.';});}catch(e){console.warn('Catálogo público:',e);}}
   function paintPeople(){ $('#peopleList').innerHTML=people.map((p,i)=>`<div class="person-row"><div class="person-num">${i+1}</div><label>Nome<input data-person-name="${i}" value="${esc(p.name)}" required></label><label>Participação / informação<input data-person-info="${i}" value="${esc(p.info)}"></label><label class="person-photo">Foto<input data-person-photo="${i}" type="file" accept="image/*"><small>${p.photo?.name||'Opcional'}</small></label><button type="button" class="icon-action danger" data-remove-person="${i}">×</button></div>`).join('');}
   $('#addPersonBtn').onclick=()=>{people.push({name:'',info:'',photo:null});paintPeople();};
   $('#peopleList').addEventListener('input',e=>{const i=e.target.dataset.personName??e.target.dataset.personInfo;if(i!==undefined){if(e.target.dataset.personName!==undefined)people[i].name=e.target.value;else people[i].info=e.target.value;}});
@@ -757,17 +901,18 @@ function hideUploadProgress(success=false){
 }
 
 function setupEvents(){
+ document.addEventListener('pointerdown',()=>{unlockNotificationAudio();},{once:true});
  $('#loginForm').onsubmit=e=>{e.preventDefault();login($('#loginUser').value.trim(),$('#loginPass').value);};$('#registerForm').onsubmit=e=>{e.preventDefault();register();};$('#showRegisterBtn').onclick=()=>showAuth('register');$('#showLoginBtn').onclick=()=>showAuth('login');
  $$('.nav-item[data-page]').forEach(b=>b.addEventListener('click',()=>go(b.dataset.page))); $('#logoutBtn').onclick=logout;$('#profileQuick').onclick=()=>go('perfil');$('#mobileMenu').onclick=()=>$('#sidebar').classList.toggle('mobile-open');
  $('#notificationBtn').onclick=e=>{e.stopPropagation();$('#notificationPanel').classList.toggle('open');};document.addEventListener('click',e=>{if(!e.target.closest('#notificationPanel')&&!e.target.closest('#notificationBtn'))$('#notificationPanel').classList.remove('open');});$('#markReadBtn').onclick=()=>{notifications=notifications.map(n=>({...n,read:true}));persist();renderNotifications();toast('Notificações marcadas como lidas.','info');};
  $('#deleteAllNotificationsBtn').onclick=()=>{notifications=[];persist();renderNotifications();};
  $('#deleteReadBtn').onclick=()=>{notifications=notifications.filter(n=>!n.read);persist();renderNotifications();};
  $('#notificationsList').addEventListener('click',e=>{const d=e.target.closest('[data-delete-notification]');if(d){e.preventDefault();e.stopPropagation();notifications=notifications.filter(n=>n.id!==d.dataset.deleteNotification);persist();renderNotifications();return;}const o=e.target.closest('[data-open-notification]');if(o){const n=notifications.find(x=>x.id===o.dataset.openNotification);if(n){n.read=true;persist();renderNotifications();if(n.linkPage)go(n.linkPage);}}});
- const nm=$('#notificationMode'); if(nm){nm.value=getNotificationPrefs().mode;nm.onchange=()=>{const p=getNotificationPrefs();p.mode=nm.value;saveNotificationPrefs(p);};}
- $('#testNotificationBtn')?.addEventListener('click',()=>showNotificationPopup('Teste de notificação','Este teste aparece somente como popup e não é salvo no histórico.'));
+ const nm=$('#notificationMode'),ns=$('#notificationSound'); if(nm){nm.value=getNotificationPrefs().mode;nm.onchange=()=>{const p=getNotificationPrefs();p.mode=nm.value;saveNotificationPrefs(p);unlockNotificationAudio();requestDesktopNotifications();};} if(ns){ns.value=getNotificationPrefs().sound;ns.onchange=()=>{const p=getNotificationPrefs();p.sound=ns.value;saveNotificationPrefs(p);unlockNotificationAudio();playNotificationSound(true);};}
+ $('#testNotificationBtn')?.addEventListener('click',()=>{unlockNotificationAudio();playNotificationSound(true);speakNotification('Teste de notificação. Este aviso não será salvo.');showNotificationPopup('Teste de notificação','Este teste aparece somente como popup e não é salvo no histórico.');requestDesktopNotifications();});
 
  $('#globalSearch').oninput=e=>{const q=e.target.value.trim();if(q){go('pedidos');$('#orderSearch').value=q;renderOrders();}};$('#orderSearch').oninput=renderOrders;$('#orderSort').onchange=renderOrders;$('#clientSearch').oninput=renderClients;$('#catalogSearch').oninput=renderCatalog;$('#quoteSearch').oninput=renderQuotes;$('#quoteFilter').onchange=renderQuotes;['finStart','finEnd','finStatus'].forEach(id=>$('#'+id).onchange=renderFinance);$('#clearFinance').onclick=()=>{$('#finStart').value='';$('#finEnd').value='';$('#finStatus').value='all';renderFinance();};$('#copyBriefingBtn').onclick=()=>generateLink();
- $('#saveProfileBtn').onclick=async()=>{const btn=$('#saveProfileBtn');btn.disabled=true;try{designer={...designer,name:$('#dName').value.trim()||'Designer',brand:$('#dBrand').value.trim(),whats:$('#dWhats').value.trim(),email:$('#dEmail').value.trim(),insta:$('#dInsta').value.trim(),portfolio:$('#dPortfolio').value.trim(),area:$('#dArea').value.trim(),bio:$('#dBio').value.trim(),photo:designer.photo||'',banner:designer.banner||''};const file=$('#profileBanner')?.files?.[0];if(file){if(file.size>8*1024*1024)throw new Error('O banner deve ter no máximo 8 MB.');if(!supabaseClient)initSupabaseClient();if(!supabaseClient)throw new Error('Não foi possível conectar ao armazenamento.');showUploadProgress('Enviando banner…','Atualizando o banner do seu perfil.');const safe=(file.name||'banner').replace(/[^a-zA-Z0-9._-]/g,'_');const path=`profile/${getOwnerToken()}/${Date.now()}-${safe}`;const {error}=await supabaseClient.storage.from('briefing-files').upload(path,file,{upsert:false,contentType:file.type||'image/jpeg'});if(error)throw error;designer.banner=supabaseClient.storage.from('briefing-files').getPublicUrl(path).data.publicUrl;updateUploadProgress(100,'Banner atualizado com sucesso.');}persist();await saveRemoteProfile();renderIdentity();renderProfile();renderDashboard();if(file)hideUploadProgress(true);toast('Perfil atualizado e pronto para aparecer nos briefings.');}catch(err){hideUploadProgress(false);toast(err?.message||'Não foi possível salvar o perfil.','error');}finally{btn.disabled=false;}};$('#profilePhoto').onchange=async e=>{const f=e.target.files[0];if(!f)return;if(f.size>4*1024*1024){toast('Escolha uma foto de até 4 MB.','error');e.target.value='';return;}showUploadProgress('Atualizando foto…','Carregando a foto do seu perfil.');try{designer.photo=await new Promise((res,rej)=>{const r=new FileReader();r.onprogress=ev=>{if(ev.lengthComputable)updateUploadProgress(Math.max(10,(ev.loaded/ev.total)*90),'Carregando a foto do perfil…');};r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(f);});updateUploadProgress(100,'Foto atualizada com sucesso.');persist();await saveRemoteProfile();renderIdentity();renderProfile();hideUploadProgress(true);}catch(err){hideUploadProgress(false);toast('Não foi possível atualizar a foto.','error');}finally{e.target.value='';}};$('#exportBackupBtn').onclick=exportBackup;$('#importBackup').onchange=e=>{if(e.target.files[0])importBackup(e.target.files[0]);};
+ $('#saveProfileBtn').onclick=async()=>{const btn=$('#saveProfileBtn');btn.disabled=true;try{designer={...designer,name:$('#dName').value.trim()||'Designer',brand:$('#dBrand').value.trim(),whats:$('#dWhats').value.trim(),email:$('#dEmail').value.trim(),insta:$('#dInsta').value.trim(),portfolio:$('#dPortfolio').value.trim(),area:$('#dArea').value.trim(),bio:$('#dBio').value.trim(),photo:designer.photo||'',banner:designer.banner||''};const file=$('#profileBanner')?.files?.[0];if(file){if(file.size>8*1024*1024)throw new Error('O banner deve ter no máximo 8 MB.');if(!supabaseClient)initSupabaseClient();if(!supabaseClient)throw new Error('Não foi possível conectar ao armazenamento.');showUploadProgress('Enviando banner…','Atualizando o banner do seu perfil.');const safe=(file.name||'banner').replace(/[^a-zA-Z0-9._-]/g,'_');const path=`profile/${getOwnerToken()}/${Date.now()}-${safe}`;const {error}=await supabaseClient.storage.from('briefing-files').upload(path,file,{upsert:false,contentType:file.type||'image/jpeg'});if(error)throw error;designer.banner=supabaseClient.storage.from('briefing-files').getPublicUrl(path).data.publicUrl;updateUploadProgress(100,'Banner atualizado com sucesso.');}persist();await saveRemoteProfile();await syncPublicProfileLink(getPublicToken());renderIdentity();renderProfile();renderDashboard();if(file)hideUploadProgress(true);toast('Perfil atualizado e pronto para aparecer nos briefings.');}catch(err){hideUploadProgress(false);toast(err?.message||'Não foi possível salvar o perfil.','error');}finally{btn.disabled=false;}};$('#profilePhoto').onchange=async e=>{const f=e.target.files[0];if(!f)return;if(f.size>4*1024*1024){toast('Escolha uma foto de até 4 MB.','error');e.target.value='';return;}showUploadProgress('Atualizando foto…','Carregando a foto do seu perfil.');try{designer.photo=await new Promise((res,rej)=>{const r=new FileReader();r.onprogress=ev=>{if(ev.lengthComputable)updateUploadProgress(Math.max(10,(ev.loaded/ev.total)*90),'Carregando a foto do perfil…');};r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(f);});updateUploadProgress(100,'Foto atualizada com sucesso.');persist();await saveRemoteProfile();renderIdentity();renderProfile();hideUploadProgress(true);}catch(err){hideUploadProgress(false);toast('Não foi possível atualizar a foto.','error');}finally{e.target.value='';}};$('#exportBackupBtn').onclick=exportBackup;$('#importBackup').onchange=e=>{if(e.target.files[0])importBackup(e.target.files[0]);};
  document.addEventListener('click',handleDelegated);document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeModal();$('#notificationPanel').classList.remove('open');}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='n'){e.preventDefault();openOrder();}});
 }
 function handleDelegated(e){const a=e.target.closest('[data-action]');if(a){const action=a.dataset.action;if(action==='new-order')openOrder();if(action==='new-client')openClientForm();if(action==='new-quote')openQuoteForm();if(action==='new-catalog')openCatalogForm();if(action==='copy-briefing')generateLink();}

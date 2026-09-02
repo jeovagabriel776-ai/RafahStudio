@@ -328,3 +328,71 @@ for each row execute function public.set_rafah_profile_updated_at();
 -- Para o primeiro teste, deixe "Confirm email" DESATIVADO.
 -- A conta continuará armazenada no Supabase Auth e poderá ser usada em outro dispositivo.
 -- ============================================================
+
+
+-- ============================================================
+-- LINK CURTO + PERFIL PÚBLICO DO BRIEFING
+-- Mantém os dados do perfil fora da URL. O cliente recebe apenas
+-- o public_token no #briefing=...
+-- ============================================================
+create table if not exists public.briefing_public_profiles (
+  public_token text primary key references public.briefing_links(public_token) on delete cascade,
+  name text not null default 'Designer',
+  whatsapp text not null default '',
+  instagram text not null default '',
+  portfolio text not null default '',
+  email text not null default '',
+  banner text not null default '',
+  updated_at timestamptz not null default now()
+);
+
+alter table public.briefing_public_profiles enable row level security;
+
+drop policy if exists "briefing_public_profiles_no_direct_select" on public.briefing_public_profiles;
+
+drop function if exists public.save_public_profile_link(text,text,text,text,text,text,text);
+drop function if exists public.save_public_profile_link(text,text,text,text,text,text,text,text);
+
+create or replace function public.save_public_profile_link(
+  p_public_token text,
+  p_owner_secret text,
+  p_name text,
+  p_whatsapp text,
+  p_instagram text,
+  p_portfolio text,
+  p_email text,
+  p_banner text
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare v_owner_secret text;
+begin
+  select owner_secret into v_owner_secret from public.briefing_links where public_token=p_public_token;
+  if v_owner_secret is null or v_owner_secret <> p_owner_secret then raise exception 'Acesso ao link não autorizado'; end if;
+  insert into public.briefing_public_profiles(public_token,name,whatsapp,instagram,portfolio,email,banner)
+  values(p_public_token,coalesce(nullif(trim(p_name),''),'Designer'),coalesce(trim(p_whatsapp),''),coalesce(trim(p_instagram),''),coalesce(trim(p_portfolio),''),coalesce(trim(p_email),''),coalesce(trim(p_banner),''))
+  on conflict(public_token) do update set
+    name=excluded.name,whatsapp=excluded.whatsapp,instagram=excluded.instagram,
+    portfolio=excluded.portfolio,email=excluded.email,banner=excluded.banner,updated_at=now();
+end;
+$$;
+
+create or replace function public.get_public_profile_for_token(p_public_token text)
+returns table(name text,whatsapp text,instagram text,portfolio text,email text,banner text)
+language sql
+security definer
+set search_path = public
+as $$
+  select p.name,p.whatsapp,p.instagram,p.portfolio,p.email,p.banner
+  from public.briefing_public_profiles p
+  where p.public_token=p_public_token;
+$$;
+
+grant execute on function public.save_public_profile_link(text,text,text,text,text,text,text,text) to authenticated;
+grant execute on function public.get_public_profile_for_token(text) to anon,authenticated;
+
+-- O estado Finalizado é usado depois do pagamento para indicar que o projeto
+-- foi concluído e pode ser enviado ao catálogo.
