@@ -967,3 +967,53 @@ async function init(){
 }
 
 init();
+
+/* RAFAHSTUDIO DEADLINE TAGS */
+
+/* RAFAHSTUDIO DEADLINE TAGS */
+(function(){
+  function getDate(o){
+    const v=o?.deadline||o?.due_date||o?.prazo||o?.date;
+    if(!v)return null;
+    const d=new Date(v+'T23:59:59');
+    return isNaN(d)?null:d;
+  }
+  window.rafahDeadlineTag=function(o){
+    const d=getDate(o);
+    if(!d)return {key:'none',label:'Sem prazo',days:null};
+    const now=new Date();
+    const a=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+    const b=new Date(d.getFullYear(),d.getMonth(),d.getDate());
+    const days=Math.ceil((b-a)/86400000);
+    if(days<0)return {key:'late',label:'Atrasado',days};
+    if(days===0)return {key:'today',label:'Entrega hoje',days};
+    if(days===1)return {key:'tomorrow',label:'Amanhã',days};
+    if(days<=3)return {key:'urgent',label:`${days} dias`,days};
+    if(days<=7)return {key:'soon',label:`${days} dias`,days};
+    return {key:'normal',label:`${days} dias`,days};
+  };
+  window.rafahDeadlineTagHtml=function(o){
+    const t=window.rafahDeadlineTag(o);
+    if(t.key==='none')return '';
+    return `<span class="deadline-tag deadline-${t.key}" title="Prazo: ${t.label}">${t.label}</span>`;
+  };
+  // Expose a safe decorator for existing order cards. It looks for common order-card containers.
+  window.refreshRafahDeadlineTags=function(){
+    document.querySelectorAll('[data-order-id], .order-card, .pedido-card, .kanban-card, .stage-card').forEach(el=>{
+      if(el.querySelector('.deadline-tag'))return;
+      const id=el.dataset.orderId||el.dataset.id;
+      let obj=null;
+      try{
+        const source=window.orders||window.pedidos||[];
+        obj=source.find(x=>String(x.id)===String(id));
+      }catch(e){}
+      if(!obj)return;
+      const html=window.rafahDeadlineTagHtml(obj);
+      if(!html)return;
+      const host=el.querySelector('.order-card-top,.card-top,.stage-card-head,.order-head')||el.firstElementChild||el;
+      host.insertAdjacentHTML('beforeend',html);
+    });
+  };
+  window.addEventListener('load',()=>setTimeout(refreshRafahDeadlineTags,700));
+  document.addEventListener('rafah:orders-rendered',()=>setTimeout(refreshRafahDeadlineTags,0));
+})();
