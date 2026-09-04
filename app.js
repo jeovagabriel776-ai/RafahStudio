@@ -11,6 +11,19 @@ const dateLabel = d => d ? new Date(`${d}T12:00:00`).toLocaleDateString('pt-BR',
 const esc = v => String(v ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
 const initials = v => String(v||'Designer').trim().split(/\s+/).slice(0,2).map(x=>x[0]).join('').toUpperCase() || 'D';
 const uid = p => `${p}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,8)}`;
+function deadlineMeta(deadline){
+  if(!deadline)return {label:'Prazo não definido',tone:'muted',days:null};
+  const base=new Date(); base.setHours(0,0,0,0);
+  const d=new Date(`${deadline}T00:00:00`);
+  const days=Math.round((d-base)/86400000);
+  if(days<0)return {label:'Atrasado',tone:'danger',days};
+  if(days===0)return {label:'Entrega hoje',tone:'danger',days};
+  if(days===1)return {label:'Amanhã',tone:'urgent',days};
+  if(days<=3)return {label:'Urgente',tone:'urgent',days};
+  if(days<=7)return {label:'Próximo',tone:'soon',days};
+  return {label:'Prazo normal',tone:'normal',days};
+}
+function deadlineTag(deadline){const m=deadlineMeta(deadline);return `<span class="deadline-tag ${m.tone}"><i></i>${esc(m.label)}</span>`;}
 
 // Supabase - briefing online
 const SUPABASE_URL = 'https://pltnbrjdagjwjuajoquv.supabase.co';
@@ -100,6 +113,40 @@ async function ensurePublicLink(){
   }
 }
 let onlineBriefingSyncRunning=false;
+const TRACKING_STATUS_INFO={
+  'Novo':{title:'Pedido recebido',desc:'Seu pedido chegou e está aguardando o início da produção.'},
+  'Em andamento':{title:'Em produção',desc:'O designer já está trabalhando na sua arte.'},
+  'Esperando aprovação':{title:'Aguardando sua aprovação',desc:'A arte está em uma etapa de revisão e aprovação.'},
+  'Alteração':{title:'Ajustes em andamento',desc:'O designer está realizando os ajustes solicitados.'},
+  'Entregue':{title:'Arte entregue',desc:'A arte foi concluída e está pronta para você.'},
+  'Pago':{title:'Pagamento confirmado',desc:'Pagamento recebido. O projeto está na etapa final.'},
+  'Finalizado':{title:'Projeto finalizado',desc:'Tudo certo! Este projeto foi concluído.'}
+};
+function trackingProgress(status){const i=Math.max(0,STATUS.indexOf(status));return Math.round((i/(STATUS.length-1))*100);}
+async function ensureOrderTracking(o){
+  if(!supabaseClient||!o||!currentUser)return '';
+  const hadToken=!!o.trackingToken;
+  if(!o.trackingToken)o.trackingToken=randomToken();
+  try{
+    if(!(await ensurePublicLink())) return o.trackingToken||'';
+    await syncPublicProfileLink(getPublicToken());
+    const {error}=await supabaseClient.rpc('upsert_order_tracking',{
+      p_tracking_token:o.trackingToken,p_owner_secret:getOwnerToken(),p_order_id:String(o.id),p_public_token:getPublicToken(),
+      p_client_name:o.client||'',p_project_name:o.project||'Sem projeto',p_service_type:o.type||'Outro',
+      p_deadline:o.deadline||null,p_status:o.status||'Novo',p_value:Number(o.value)||0
+    });
+    if(error)throw error;
+    if(!hadToken)persist();
+    return o.trackingToken;
+  }catch(e){console.warn('[RafahStudio] acompanhamento:',e);return o.trackingToken||'';}
+}
+function trackingUrlForOrder(o){
+  if(!o?.trackingToken)return '';
+  const base=location.href.split('#')[0];
+  return `${base}#pedido=${encodeURIComponent(o.trackingToken)}`;
+}
+async function syncOrderTracking(o){if(!o)return '';const token=await ensureOrderTracking(o);return token?trackingUrlForOrder(o):'';}
+
 function onlineBriefingFingerprint(b){
   return [String(b.client_name||'').trim().toLowerCase(),String(b.project_name||'').trim().toLowerCase(),String(b.created_at||'').slice(0,10)].join('|');
 }
@@ -287,7 +334,7 @@ function normalizeStatus(s){
   if(s==='Finalizado'||s==='Finalizada') return 'Finalizado';
   return STATUS.includes(s)?s:'Novo';
 }
-function normalizeOrder(o){ return {id:o.id||uid('ord'),remoteId:o.remoteId||'',remoteCreated:o.remoteCreated||'',client:o.client||'',project:o.project||'Sem projeto',deadline:o.deadline||'',value:Number(o.value)||0,type:o.type||'Outro',status:normalizeStatus(o.status),created:o.created||todayISO(),paid:Boolean(o.paid||o.status==='Pago'||o.status==='Finalizado'),origin:o.origin||'Manual',priority:o.priority||'Normal',briefing:o.briefing||{},files:Array.isArray(o.files)?o.files:[],people:Array.isArray(o.people)?o.people:[],readyArt:o.readyArt||null,history:Array.isArray(o.history)?o.history:[]}; }
+function normalizeOrder(o){ return {id:o.id||uid('ord'),remoteId:o.remoteId||'',remoteCreated:o.remoteCreated||'',client:o.client||'',project:o.project||'Sem projeto',deadline:o.deadline||'',value:Number(o.value)||0,type:o.type||'Outro',status:normalizeStatus(o.status),created:o.created||todayISO(),paid:Boolean(o.paid||o.status==='Pago'||o.status==='Finalizado'),origin:o.origin||'Manual',priority:o.priority||'Normal',briefing:o.briefing||{},files:Array.isArray(o.files)?o.files:[],people:Array.isArray(o.people)?o.people:[],readyArt:o.readyArt||null,trackingToken:o.trackingToken||'',history:Array.isArray(o.history)?o.history:[]}; }
 migrateLegacy();
 
 function scopedKey(base){ return `${base}:${currentUser?.id||currentUser?.user||currentUser?.email||'guest'}`; }
@@ -409,7 +456,7 @@ function renderDashboard(){
  $('#attentionList').innerHTML=attention.slice(0,5).join('')||`<div class="empty-mini"><span>✓</span><div><b>Tudo em dia.</b><small>Nenhuma ação urgente encontrada.</small></div></div>`;
  $('#recentOrders').innerHTML=[...orders].sort((a,b)=>b.created.localeCompare(a.created)).slice(0,5).map(o=>`<button class="list-row" data-open-order="${o.id}"><div class="list-project"><span class="project-mark">${esc(initials(o.project))}</span><div><b>${esc(o.project)}</b><small>${esc(o.client)} • ${esc(o.type)}</small></div></div><span class="status-pill ${statusClass(o.status)}">${esc(o.status)}</span><span class="list-date">${dateLabel(o.deadline)}</span></button>`).join('')||`<div class="empty-mini"><span>＋</span><div><b>Nenhum pedido ainda.</b><small>Crie seu primeiro projeto.</small></div></div>`;
  const deadlines=[...orders].filter(o=>o.deadline&&!['Entregue','Pago','Finalizado'].includes(o.status)).sort((a,b)=>a.deadline.localeCompare(b.deadline)).slice(0,5);
- $('#deadlines').innerHTML=deadlines.map(o=>`<button class="deadline-row" data-open-order="${o.id}"><div><b>${esc(o.project)}</b><small>${esc(o.client)}</small></div><strong class="deadline ${new Date(o.deadline+'T23:59:59')<new Date()?'overdue':''}">${dateLabel(o.deadline)}</strong></button>`).join('')||`<div class="empty-mini"><span>✓</span><div><b>Sem prazos próximos.</b><small>Você está tranquilo por enquanto.</small></div></div>`;
+ $('#deadlines').innerHTML=deadlines.map(o=>`<button class="deadline-row" data-open-order="${o.id}"><div><b>${esc(o.project)}</b><small>${esc(o.client)}</small></div><div class="deadline-row-right">${deadlineTag(o.deadline)}<strong class="deadline ${new Date(o.deadline+'T23:59:59')<new Date()?'overdue':''}">${dateLabel(o.deadline)}</strong></div></button>`).join('')||`<div class="empty-mini"><span>✓</span><div><b>Sem prazos próximos.</b><small>Você está tranquilo por enquanto.</small></div></div>`;
 }
 
 function filteredOrders(){
@@ -437,19 +484,20 @@ function renderOrders(){
  const columns=visibleStatuses.map(status=>{
    const list=sortOrders(orders.filter(o=>o.status===status));
    const cards=list.map(o=>`
-     <article class="order-card" data-order-card="${o.id}">
+     <article class="order-card" draggable="true" data-order-card="${o.id}" data-drag-order="${o.id}" title="Segure e arraste para mover este pedido">
        <div class="order-card-head">
          <div class="project-cell">
            <span class="project-mark">${esc(initials(o.project))}</span>
            <div><b>${esc(o.project)}</b><small>${esc(o.client)}</small></div>
          </div>
-         <button class="icon-action" title="Abrir pedido" data-open-order="${o.id}">↗</button>
+         <span class="drag-handle" title="Arraste para mover">⋮⋮</span><button class="icon-action" title="Abrir pedido" data-open-order="${o.id}">↗</button>
        </div>
        <div class="order-card-meta">
          <span>${esc(o.type)}</span>
          <span>${dateLabel(o.deadline)}</span>
          <strong>${money(o.value)}</strong>
        </div>
+       <div class="order-card-tags">${deadlineTag(o.deadline)}${o.trackingToken?'<span class="tracking-mini">↗ Acompanhamento</span>':''}</div>
        ${o.priority!=='Normal'?`<small class="priority ${priorityClass(o.priority)}">${esc(o.priority)}</small>`:''}
        ${o.origin==='Briefing online'?`<span class="online-badge">Briefing online</span>`:''}
        ${(o.readyArt?.url||o.readyArt?.dataUrl)?`<div class="order-card-art"><img src="${esc(o.readyArt.url||o.readyArt.dataUrl)}" alt="Arte pronta"><span>Arte pronta</span></div>`:''}
@@ -626,7 +674,7 @@ async function uploadOrderAsset(file,orderId,label){
 }
 async function saveOrder(existing,peopleDraft=[],readyArtDraft=null){
   const was=existing?.status;
-  const data={client:$('#orderClient').value.trim(),project:$('#orderProject').value.trim(),deadline:$('#orderDeadline').value,value:Number($('#orderValue').value)||0,type:$('#orderType').value,status:$('#orderStatus').value,priority:$('#orderPriority').value,briefing:{...(existing?.briefing||{}),notes:$('#orderNotes').value},files:existing?.files||[],people:existing?.people||[],readyArt:existing?.readyArt||null,origin:existing?.origin||'Manual',paid:existing?.paid||false};
+  const data={client:$('#orderClient').value.trim(),project:$('#orderProject').value.trim(),deadline:$('#orderDeadline').value,value:Number($('#orderValue').value)||0,type:$('#orderType').value,status:$('#orderStatus').value,priority:$('#orderPriority').value,briefing:{...(existing?.briefing||{}),notes:$('#orderNotes').value},files:existing?.files||[],people:existing?.people||[],readyArt:existing?.readyArt||null,origin:existing?.origin||'Manual',paid:existing?.paid||false,trackingToken:existing?.trackingToken||''};
   if(!data.client||!data.project){toast('Cliente e projeto são obrigatórios.','error');return;}
   const btn=$('#orderForm button[type="submit"]');if(btn){btn.disabled=true;btn.textContent='Salvando…';}
   try{
@@ -656,12 +704,12 @@ async function saveOrder(existing,peopleDraft=[],readyArtDraft=null){
     if(data.client&&!clients.some(c=>String(c.name||'').trim().toLowerCase()===data.client.toLowerCase())){
       clients.unshift({id:uid('cli'),name:data.client,company:'',whats:'',email:'',instagram:'',notes:'Cliente cadastrado pelo pedido',created:todayISO(),origin:'Manual'});
     }
-    persist();closeModal();render();go('pedidos');if(hasUploads)hideUploadProgress(true);toast(existing?'Pedido atualizado.':'Pedido criado.');
+    persist();closeModal();render();go('pedidos');if(hasUploads)hideUploadProgress(true);syncOrderTracking(existing||orders[0]);toast(existing?'Pedido atualizado.':'Pedido criado.');
   }catch(err){if(hasUploads)hideUploadProgress(false);console.error('[RafahStudio] Falha ao salvar pedido:',err);toast(err?.message||'Não foi possível salvar o pedido. Tente novamente.','error');}
   finally{if(btn){btn.disabled=false;btn.textContent='Salvar pedido';}}
 }
 function addHistory(o,text){o.history=o.history||[];o.history.unshift({id:uid('hist'),at:new Date().toISOString(),text});}
-function openOrderView(id){const o=orders.find(x=>x.id===id);if(!o)return; const b=o.briefing||{}; modal(`<div class="modal-head"><div><span class="eyebrow">DETALHES DO PEDIDO</span><h2>${esc(o.project)}</h2><p class="muted">${esc(o.client)} • ${esc(o.type)}</p></div><button class="close-modal" data-close-modal>×</button></div><div class="detail-top"><span class="status-pill ${statusClass(o.status)}">${esc(o.status)}</span><div class="detail-actions"><button class="btn secondary" data-edit-order="${o.id}">Editar pedido</button><button class="btn secondary" data-edit-order-client="${o.id}">Editar cliente</button><button class="btn secondary" data-order-pdf="${o.id}">PDF</button>${(o.paid||o.status==='Pago'||o.status==='Finalizado')?`<button class="btn secondary" data-add-catalog-order="${o.id}">▧ Catálogo</button>`:''}<button class="btn primary" data-cycle-status="${o.id}">Avançar status</button></div></div><div class="status-flow">${STATUS.map((s,i)=>`<span class="flow-step ${STATUS.indexOf(o.status)>=i?'done':''}"><i>${STATUS.indexOf(o.status)>=i?'✓':i+1}</i>${s}</span>`).join('')}</div><div class="detail-grid"><div class="detail-card"><b>Resumo</b><dl><div><dt>Cliente</dt><dd>${esc(o.client)}</dd></div><div><dt>Prazo</dt><dd>${dateLabel(o.deadline)}</dd></div><div><dt>Valor</dt><dd>${money(o.value)}</dd></div><div><dt>Pagamento</dt><dd>${o.paid||o.status==='Pago'?'Pago':'Pendente'}</dd></div></dl></div><div class="detail-card"><b>Briefing</b><p class="detail-text">${esc(b.texts||b.notes||'Nenhuma informação adicional registrada.')}</p>${b.refs?`<div class="ref-box"><b>Referências</b><p>${esc(b.refs)}</p></div>`:''}</div></div><div class="detail-card full-detail"><div class="detail-card-head"><b>Arquivos enviados pelo cliente</b><small>${(o.files||[]).length} arquivo(s)</small></div><div id="orderFiles" class="file-gallery">${renderFileGallery(o)}</div></div><div class="detail-card full-detail"><div class="detail-card-head"><b>Pessoas e fotos para a arte</b><small>${(Array.isArray(b.people)?b.people.length:0)+(Array.isArray(o.people)?o.people.length:0)} pessoa(s)</small></div><div class="file-gallery">${renderPeopleGallery(o)}</div></div>
+function openOrderView(id){const o=orders.find(x=>x.id===id);if(!o)return; const b=o.briefing||{}; modal(`<div class="modal-head"><div><span class="eyebrow">DETALHES DO PEDIDO</span><h2>${esc(o.project)}</h2><p class="muted">${esc(o.client)} • ${esc(o.type)}</p></div><button class="close-modal" data-close-modal>×</button></div><div class="detail-top"><span class="status-pill ${statusClass(o.status)}">${esc(o.status)}</span><div class="detail-actions"><button class="btn secondary" data-share-tracking="${o.id}">↗ Acompanhar pedido</button><button class="btn secondary" data-edit-order="${o.id}">Editar pedido</button><button class="btn secondary" data-edit-order-client="${o.id}">Editar cliente</button><button class="btn secondary" data-order-pdf="${o.id}">PDF</button>${(o.paid||o.status==='Pago'||o.status==='Finalizado')?`<button class="btn secondary" data-add-catalog-order="${o.id}">▧ Catálogo</button>`:''}<button class="btn primary" data-cycle-status="${o.id}">Avançar status</button></div></div><div class="status-flow">${STATUS.map((s,i)=>`<span class="flow-step ${STATUS.indexOf(o.status)>=i?'done':''}"><i>${STATUS.indexOf(o.status)>=i?'✓':i+1}</i>${s}</span>`).join('')}</div><div class="detail-deadline-banner">${deadlineTag(o.deadline)}<span>Prazo: <b>${dateLabel(o.deadline)}</b></span></div><div class="detail-grid"><div class="detail-card"><b>Resumo</b><dl><div><dt>Cliente</dt><dd>${esc(o.client)}</dd></div><div><dt>Prazo</dt><dd>${dateLabel(o.deadline)}</dd></div><div><dt>Valor</dt><dd>${money(o.value)}</dd></div><div><dt>Pagamento</dt><dd>${o.paid||o.status==='Pago'?'Pago':'Pendente'}</dd></div></dl></div><div class="detail-card"><b>Briefing</b><p class="detail-text">${esc(b.texts||b.notes||'Nenhuma informação adicional registrada.')}</p>${b.refs?`<div class="ref-box"><b>Referências</b><p>${esc(b.refs)}</p></div>`:''}</div></div><div class="detail-card full-detail"><div class="detail-card-head"><b>Arquivos enviados pelo cliente</b><small>${(o.files||[]).length} arquivo(s)</small></div><div id="orderFiles" class="file-gallery">${renderFileGallery(o)}</div></div><div class="detail-card full-detail"><div class="detail-card-head"><b>Pessoas e fotos para a arte</b><small>${(Array.isArray(b.people)?b.people.length:0)+(Array.isArray(o.people)?o.people.length:0)} pessoa(s)</small></div><div class="file-gallery">${renderPeopleGallery(o)}</div></div>
 <div class="detail-card full-detail"><div class="detail-card-head"><b>Arte pronta / final</b><small>${o.readyArt?.name?'Arquivo anexado':'Ainda não anexada'}</small></div>${o.readyArt?.url||o.readyArt?.dataUrl?`<div class="ready-art-detail"><img src="${esc(o.readyArt.url||o.readyArt.dataUrl)}" alt="Arte final"><a class="btn secondary small" href="${esc(o.readyArt.url||o.readyArt.dataUrl)}" target="_blank" rel="noopener">Abrir arte original</a></div>`:`<div class="empty-mini center"><span>▧</span><div><b>Nenhuma arte pronta.</b><small>Edite o pedido para adicionar a arte final.</small></div></div>`}</div><div class="detail-card full-detail"><div class="detail-card-head"><b>Histórico</b><small>Atividades do pedido</small></div><div class="history">${(o.history||[]).map(h=>`<div><span></span><p><b>${esc(h.text)}</b><small>${new Date(h.at).toLocaleString('pt-BR')}</small></p></div>`).join('')||'<p class="muted">Sem histórico.</p>'}</div></div><div class="modal-actions"><button class="btn danger-btn" data-delete-order="${o.id}">Excluir pedido</button><button class="btn secondary" data-toggle-paid="${o.id}">${o.paid?'Marcar como pendente':'Marcar como pago'}</button></div>`); }
 function renderFileGallery(o){
   if(!o.files?.length)return`<div class="empty-mini center"><span>↑</span><div><b>Nenhum arquivo anexado.</b><small>Arquivos enviados pelo cliente aparecerão aqui.</small></div></div>`;
@@ -680,8 +728,8 @@ function renderPeopleGallery(o){
   return withPhotos.map(({p,i,photo})=>{const src=photo.url||photo.dataUrl;return `<div class="file-tile"><img src="${esc(src)}" alt="${esc(p.name||`Pessoa ${i+1}`)}"><div><b>${esc(p.name||`Pessoa ${i+1}`)}</b><small>${esc(p.info||'Foto para a arte')}</small></div><a class="btn secondary small" href="${esc(src)}" target="_blank" rel="noopener">Abrir original</a></div>`;}).join('');
 }
 function formatBytes(n){if(!n)return'arquivo';const u=['B','KB','MB','GB'];let i=0,x=n;while(x>=1024&&i<u.length-1){x/=1024;i++;}return`${x.toFixed(i?1:0)} ${u[i]}`;}
-function cycleStatus(id){const o=orders.find(x=>x.id===id);if(!o)return;const i=STATUS.indexOf(o.status);const next=STATUS[Math.min(i+1,STATUS.length-1)];if(next===o.status){toast('O pedido já está no status final.','info');return;}const old=o.status;o.status=next;if(next==='Pago'||next==='Finalizado')o.paid=true;addHistory(o,`Status alterado de ${old} para ${next}`);persist();render();closeModal();notify(`Status atualizado: ${next}`,`${o.project} • ${o.client}`,'info','pedidos',o.id);toast(`Pedido movido para ${next}.`);}
-function togglePaid(id){const o=orders.find(x=>x.id===id);if(!o)return;o.paid=!o.paid;if(o.paid){o.status='Pago';addHistory(o,'Pagamento recebido');notify('Pagamento recebido',`${o.project} • ${money(o.value)}`,'success','pedidos',o.id);}else{if(o.status==='Pago'||o.status==='Finalizado')o.status='Entregue';addHistory(o,'Pagamento marcado como pendente');}persist();render();toast(o.paid?'Pagamento registrado.':'Pagamento desmarcado.');}
+function cycleStatus(id){const o=orders.find(x=>x.id===id);if(!o)return;const i=STATUS.indexOf(o.status);const next=STATUS[Math.min(i+1,STATUS.length-1)];if(next===o.status){toast('O pedido já está no status final.','info');return;}const old=o.status;o.status=next;if(next==='Pago'||next==='Finalizado')o.paid=true;addHistory(o,`Status alterado de ${old} para ${next}`);persist();render();closeModal();syncOrderTracking(o);notify(`Status atualizado: ${next}`,`${o.project} • ${o.client}`,'info','pedidos',o.id);toast(`Pedido movido para ${next}.`);}
+function togglePaid(id){const o=orders.find(x=>x.id===id);if(!o)return;o.paid=!o.paid;if(o.paid){o.status='Pago';addHistory(o,'Pagamento recebido');notify('Pagamento recebido',`${o.project} • ${money(o.value)}`,'success','pedidos',o.id);}else{if(o.status==='Pago'||o.status==='Finalizado')o.status='Entregue';addHistory(o,'Pagamento marcado como pendente');}persist();render();syncOrderTracking(o);toast(o.paid?'Pagamento registrado.':'Pagamento desmarcado.');}
 function moveStatus(id,direction){
   const o=orders.find(x=>x.id===id); if(!o)return;
   const i=STATUS.indexOf(o.status);
@@ -755,6 +803,18 @@ function purgeTrash(id){
   toast('Pedido excluído permanentemente.','info');
 }
 
+async function shareOrderTracking(id){
+  const o=orders.find(x=>x.id===id);if(!o)return;
+  const btn=document.querySelector(`[data-share-tracking="${CSS.escape(String(id))}"]`);
+  if(btn){btn.disabled=true;btn.textContent='Gerando…';}
+  try{
+    const url=await syncOrderTracking(o);
+    if(!url)throw new Error('Não foi possível criar o acompanhamento.');
+    copyText(url);
+    modal(`<div class="modal-head"><div><span class="eyebrow">ACOMPANHAMENTO</span><h2>Link pronto para ${esc(o.client)}</h2><p class="muted">Envie este link. O cliente verá somente este pedido.</p></div><button class="close-modal" data-close-modal>×</button></div><div class="tracking-share"><div class="tracking-share-icon">✓</div><b>${esc(o.project)}</b><span>O link já foi copiado para a área de transferência.</span><code>${esc(url)}</code><div class="tracking-share-note">O cliente verá o andamento, prazo e histórico de etapas, sem acessar seu painel.</div></div><div class="modal-actions"><button class="btn secondary" data-close-modal>Fechar</button><button class="btn primary" data-copy-text="${esc(url)}">Copiar novamente</button></div>`);
+  }catch(e){toast(e?.message||'Não foi possível gerar o link.','error');}
+  finally{if(btn){btn.disabled=false;btn.textContent='↗ Acompanhar pedido';}}
+}
 function openClientForm(client=null){editingClientId=client?.id||null;const c=client||{name:'',company:'',whats:'',email:'',instagram:'',notes:''};const oldName=c.name||'';modal(`<div class="modal-head"><div><span class="eyebrow">CLIENTE</span><h2>${editingClientId?'Editar cliente':'Novo cliente'}</h2></div><button class="close-modal" data-close-modal>×</button></div><form id="clientForm"><div class="two-col"><label>Nome completo<input id="clientName" value="${esc(c.name)}" required></label><label>Empresa<input id="clientCompany" value="${esc(c.company||'')}"></label></div><div class="two-col"><label>WhatsApp<input id="clientWhats" value="${esc(c.whats||'')}" ></label><label>E-mail<input id="clientEmail" type="email" value="${esc(c.email||'')}" ></label></div><label>Instagram<input id="clientInstagram" value="${esc(c.instagram||'')}"></label><label>Observações<textarea id="clientNotes" rows="4">${esc(c.notes||'')}</textarea></label><div class="modal-actions"><button type="button" class="btn secondary" data-close-modal>Cancelar</button><button class="btn primary" type="submit">Salvar cliente</button></div></form>`);
  $('#clientForm').onsubmit=e=>{e.preventDefault();const data={name:$('#clientName').value.trim(),company:$('#clientCompany').value.trim(),whats:$('#clientWhats').value.trim(),email:$('#clientEmail').value.trim(),instagram:$('#clientInstagram').value.trim(),notes:$('#clientNotes').value.trim()};if(!data.name){toast('Informe o nome do cliente.','error');return;}if(editingClientId){const target=clients.find(x=>x.id===editingClientId);if(target)Object.assign(target,data);if(oldName&&oldName.toLowerCase()!==data.name.toLowerCase()){orders.forEach(o=>{if(String(o.client||'').toLowerCase()===oldName.toLowerCase())o.client=data.name;});}}else clients.unshift({id:uid('cli'),...data,created:todayISO()});persist();closeModal();render();toast(editingClientId?'Cliente atualizado.':'Cliente cadastrado.');}; }
 function deleteClient(id){const c=clients.find(x=>x.id===id);if(!c)return;if(!confirm(`Remover o cliente “${c.name}”?\n\nOs pedidos e o histórico não serão apagados.`))return;clients=clients.filter(x=>x.id!==id);persist();closeModal();render();toast('Cliente removido.','info');}
@@ -762,7 +822,7 @@ function viewClient(name){const c=clients.find(x=>x.name.toLowerCase()===name.to
 
 function openQuoteForm(q=null){editingQuoteId=q?.id||null;const x=q||{client:'',project:'',valid:'',status:'Rascunho',description:'',items:[{desc:'',qty:1,price:0}],terms:'',discount:0}; modal(`<div class="modal-head"><div><span class="eyebrow">ORÇAMENTO</span><h2>${editingQuoteId?'Editar orçamento':'Novo orçamento'}</h2></div><button class="close-modal" data-close-modal>×</button></div><form id="quoteForm"><div class="two-col"><label>Cliente<input id="quoteClient" value="${esc(x.client)}" required></label><label>Projeto<input id="quoteProject" value="${esc(x.project)}" required></label></div><div class="two-col"><label>Validade<input id="quoteValid" type="date" value="${esc(x.valid)}"></label><label>Status<select id="quoteStatus">${QUOTE_STATUS.map(s=>`<option ${s===x.status?'selected':''}>${s}</option>`).join('')}</select></label></div><label>Descrição curta<input id="quoteDescription" value="${esc(x.description||'')}"></label><div class="items-editor"><div class="section-title"><span>+</span><div><b>Itens do orçamento</b><small>Adicione serviços e valores.</small></div></div><div id="quoteItemsEditor"></div><button type="button" class="btn secondary" id="addQuoteItem">+ Adicionar item</button></div><div class="two-col"><label>Desconto (R$)<input id="quoteDiscount" type="number" min="0" step="0.01" value="${Number(x.discount)||0}"></label><label>Total<input id="quoteTotal" readonly></label></div><label>Condições / observações<textarea id="quoteTerms" rows="4">${esc(x.terms||'')}</textarea></label><div class="modal-actions"><button type="button" class="btn secondary" data-close-modal>Cancelar</button><button class="btn primary" type="submit">Salvar orçamento</button></div></form>`); const editor=$('#quoteItemsEditor');let items=Array.isArray(x.items)&&x.items.length?x.items:[{desc:'',qty:1,price:0}];function paintItems(){editor.innerHTML=items.map((it,i)=>`<div class="quote-item"><input data-item-desc="${i}" placeholder="Descrição" value="${esc(it.desc)}"><input data-item-qty="${i}" type="number" min="1" step="1" value="${it.qty||1}"><input data-item-price="${i}" type="number" min="0" step="0.01" value="${it.price||0}"><button type="button" class="icon-action danger" data-remove-item="${i}">×</button></div>`).join('');recalc();}function recalc(){let subtotal=items.reduce((a,it)=>a+(Number(it.qty)||0)*(Number(it.price)||0),0);let total=Math.max(0,subtotal-(Number($('#quoteDiscount').value)||0));$('#quoteTotal').value=money(total);}editor.addEventListener('input',e=>{const i=e.target.dataset.itemDesc??e.target.dataset.itemQty??e.target.dataset.itemPrice;if(i!==undefined){const n=Number(i);items[n]={...items[n],desc:editor.querySelector(`[data-item-desc="${n}"]`)?.value||'',qty:Number(editor.querySelector(`[data-item-qty="${n}"]`)?.value)||1,price:Number(editor.querySelector(`[data-item-price="${n}"]`)?.value)||0};recalc();}});editor.addEventListener('click',e=>{const b=e.target.closest('[data-remove-item]');if(!b)return;items.splice(Number(b.dataset.removeItem),1);if(!items.length)items.push({desc:'',qty:1,price:0});paintItems();});$('#addQuoteItem').onclick=()=>{items.push({desc:'',qty:1,price:0});paintItems();};$('#quoteDiscount').oninput=recalc;paintItems();$('#quoteForm').onsubmit=e=>{e.preventDefault();const subtotal=items.reduce((a,it)=>a+(Number(it.qty)||0)*(Number(it.price)||0),0),discount=Number($('#quoteDiscount').value)||0,total=Math.max(0,subtotal-discount);const data={client:$('#quoteClient').value.trim(),project:$('#quoteProject').value.trim(),valid:$('#quoteValid').value,status:$('#quoteStatus').value,description:$('#quoteDescription').value.trim(),items,discount,subtotal,total,terms:$('#quoteTerms').value.trim(),updated:todayISO()};if(!data.client||!data.project){toast('Cliente e projeto são obrigatórios.','error');return;}if(editingQuoteId)Object.assign(quotes.find(q=>q.id===editingQuoteId),data);else quotes.unshift({id:uid('quo'),created:todayISO(),...data});persist();closeModal();render();toast(editingQuoteId?'Orçamento atualizado.':'Orçamento criado.');}; }
 function deleteQuote(id){const q=quotes.find(x=>x.id===id);if(!q)return;if(!confirm(`Excluir o orçamento “${q.project}”?`))return;quotes=quotes.filter(x=>x.id!==id);persist();render();toast('Orçamento excluído.','info');}
-function quoteToOrder(id){const q=quotes.find(x=>x.id===id);if(!q)return;const o={id:uid('ord'),client:q.client,project:q.project,deadline:q.valid,value:q.total,type:'Orçamento convertido',status:'Novo',priority:'Normal',created:todayISO(),paid:false,origin:'Orçamento',briefing:{notes:q.terms},files:[],history:[]};addHistory(o,'Pedido criado a partir do orçamento');orders.unshift(o);q.status='Aprovado';persist();render();closeModal();go('pedidos');notify('Orçamento convertido em pedido',`${q.project} • ${q.client}`,'success','pedidos',o.id);toast('Pedido criado a partir do orçamento.');}
+function quoteToOrder(id){const q=quotes.find(x=>x.id===id);if(!q)return;const o={id:uid('ord'),client:q.client,project:q.project,deadline:q.valid,value:q.total,type:'Orçamento convertido',status:'Novo',priority:'Normal',created:todayISO(),paid:false,origin:'Orçamento',briefing:{notes:q.terms},files:[],history:[]};addHistory(o,'Pedido criado a partir do orçamento');orders.unshift(o);q.status='Aprovado';persist();render();closeModal();go('pedidos');syncOrderTracking(o);notify('Orçamento convertido em pedido',`${q.project} • ${q.client}`,'success','pedidos',o.id);toast('Pedido criado a partir do orçamento.');}
 
 async function generateLink(){
   if(!(await ensurePublicLink())) return '';
@@ -795,7 +855,7 @@ async function syncPublicProfileLink(token=getPublicToken()){
 }
 function copyText(text){navigator.clipboard?.writeText(text).then(()=>toast('Link copiado.')).catch(()=>{const ta=document.createElement('textarea');ta.value=text;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();toast('Link copiado.');});}
 function openPublic(){ $('#authScreen').classList.add('hidden');$('#app').classList.add('hidden');$('#publicPage').classList.remove('hidden'); }
-function handlePublicHash(){const raw=location.hash.startsWith('#briefing=');if(!raw)return false;openPublic();return true;}
+function handlePublicHash(){const isBriefing=location.hash.startsWith('#briefing=');const isTracking=location.hash.startsWith('#pedido=');if(!isBriefing&&!isTracking)return false;if(isTracking){$('#authScreen').classList.add('hidden');$('#app').classList.add('hidden');$('#publicPage').classList.add('hidden');$('#trackingPage').classList.remove('hidden');return true;}openPublic();return true;}
 async function readFiles(fileList){const arr=[];for(const f of [...fileList]){if(f.size>8*1024*1024){toast(`${f.name} é maior que 8 MB e não foi anexado.`,'error');continue;}const data=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(f);});arr.push({id:uid('file'),name:f.name,type:f.type,size:f.size,dataUrl:data,file:f});}return arr;}
 let publicProfileCache={};
 function publicProfileFromHash(){
@@ -856,6 +916,40 @@ async function loadPublicProfile(){
   const name=$('#publicDesignerName');if(name)name.textContent=p.name||'Designer';
   renderPublicSocials(p);
 }
+async function loadPublicTracking(){
+  const token=(()=>{try{return decodeURIComponent(location.hash.slice('#pedido='.length));}catch{return ''}})();
+  const root=$('#trackingPage');if(!root||!token||!supabaseClient)return;
+  const loading=$('#trackingLoading'),content=$('#trackingContent'),errorBox=$('#trackingError');
+  loading?.classList.remove('hidden');content?.classList.add('hidden');errorBox?.classList.add('hidden');
+  try{
+    const {data,error}=await supabaseClient.rpc('get_order_tracking',{p_tracking_token:token});
+    if(error)throw error;
+    const o=Array.isArray(data)?data[0]:data;
+    if(!o)throw new Error('Este link de acompanhamento não existe ou foi desativado.');
+    const profile=o.public_token?await (async()=>{try{const {data}=await supabaseClient.rpc('get_public_profile_for_token',{p_public_token:o.public_token});return Array.isArray(data)?(data[0]||{}):(data||{});}catch{return {}}})():{};
+    const status=o.status||'Novo', info=TRACKING_STATUS_INFO[status]||TRACKING_STATUS_INFO.Novo, progress=trackingProgress(status);
+    $('#trackingBrandName').textContent=profile.name||'RafahStudio';
+    $('#trackingProject').textContent=o.project_name||'Seu pedido';
+    $('#trackingClient').textContent=o.client_name||'Cliente';
+    $('#trackingService').textContent=o.service_type||'Projeto';
+    $('#trackingDeadline').textContent=dateLabel(o.deadline);
+    $('#trackingStatus').textContent=info.title;
+    $('#trackingStatusDesc').textContent=info.desc;
+    $('#trackingProgress').style.width=`${progress}%`;
+    $('#trackingProgressValue').textContent=`${progress}%`;
+    $('#trackingDeadlineTag').innerHTML=deadlineTag(o.deadline);
+    $('#trackingSteps').innerHTML=STATUS.map((s,i)=>{const done=STATUS.indexOf(status)>=i;const active=s===status;return `<div class="tracking-step ${done?'done':''} ${active?'active':''}"><span>${done?'✓':i+1}</span><div><b>${esc(s)}</b><small>${esc(TRACKING_STATUS_INFO[s]?.desc||'')}</small></div></div>`}).join('');
+    const socials=[
+      {k:'whatsapp',label:'WhatsApp',v:profile.whatsapp||profile.whats},
+      {k:'instagram',label:'Instagram',v:profile.instagram||profile.insta},
+      {k:'portfolio',label:'Portfólio',v:profile.portfolio}
+    ].filter(x=>x.v).map(x=>`<a href="${esc(socialUrl(x.k,x.v))}" target="_blank" rel="noopener">${socialIcon(x.k)}<span>${esc(x.label)}</span></a>`).join('');
+    $('#trackingSocials').innerHTML=socials;
+    content?.classList.remove('hidden');
+  }catch(e){console.warn('Acompanhamento público:',e);errorBox?.classList.remove('hidden');$('#trackingErrorText').textContent=e?.message||'Não foi possível carregar este pedido.';}
+  finally{loading?.classList.add('hidden');}
+}
+function setupTracking(){loadPublicTracking();setInterval(()=>{if(location.hash.startsWith('#pedido='))loadPublicTracking();},15000);}
 function setupPublic(){
   let people=[];let publicCatalog=[];let selectedCatalog=[];
   $('#publicCatalogToggle')?.addEventListener('click',()=>{const d=$('#publicCatalogDrawer');if(!d)return;d.classList.toggle('hidden');const b=$('#publicCatalogToggle');b.classList.toggle('open',!d.classList.contains('hidden'));});
@@ -913,6 +1007,12 @@ function setupEvents(){
 
  $('#globalSearch').oninput=e=>{const q=e.target.value.trim();if(q){go('pedidos');$('#orderSearch').value=q;renderOrders();}};$('#orderSearch').oninput=renderOrders;$('#orderSort').onchange=renderOrders;$('#clientSearch').oninput=renderClients;$('#catalogSearch').oninput=renderCatalog;$('#quoteSearch').oninput=renderQuotes;$('#quoteFilter').onchange=renderQuotes;['finStart','finEnd','finStatus'].forEach(id=>$('#'+id).onchange=renderFinance);$('#clearFinance').onclick=()=>{$('#finStart').value='';$('#finEnd').value='';$('#finStatus').value='all';renderFinance();};$('#copyBriefingBtn').onclick=()=>generateLink();
  $('#saveProfileBtn').onclick=async()=>{const btn=$('#saveProfileBtn');btn.disabled=true;try{designer={...designer,name:$('#dName').value.trim()||'Designer',brand:$('#dBrand').value.trim(),whats:$('#dWhats').value.trim(),email:$('#dEmail').value.trim(),insta:$('#dInsta').value.trim(),portfolio:$('#dPortfolio').value.trim(),area:$('#dArea').value.trim(),bio:$('#dBio').value.trim(),photo:designer.photo||'',banner:designer.banner||''};const file=$('#profileBanner')?.files?.[0];if(file){if(file.size>8*1024*1024)throw new Error('O banner deve ter no máximo 8 MB.');if(!supabaseClient)initSupabaseClient();if(!supabaseClient)throw new Error('Não foi possível conectar ao armazenamento.');showUploadProgress('Enviando banner…','Atualizando o banner do seu perfil.');const safe=(file.name||'banner').replace(/[^a-zA-Z0-9._-]/g,'_');const path=`profile/${getOwnerToken()}/${Date.now()}-${safe}`;const {error}=await supabaseClient.storage.from('briefing-files').upload(path,file,{upsert:false,contentType:file.type||'image/jpeg'});if(error)throw error;designer.banner=supabaseClient.storage.from('briefing-files').getPublicUrl(path).data.publicUrl;updateUploadProgress(100,'Banner atualizado com sucesso.');}persist();await saveRemoteProfile();await syncPublicProfileLink(getPublicToken());renderIdentity();renderProfile();renderDashboard();if(file)hideUploadProgress(true);toast('Perfil atualizado e pronto para aparecer nos briefings.');}catch(err){hideUploadProgress(false);toast(err?.message||'Não foi possível salvar o perfil.','error');}finally{btn.disabled=false;}};$('#profilePhoto').onchange=async e=>{const f=e.target.files[0];if(!f)return;if(f.size>4*1024*1024){toast('Escolha uma foto de até 4 MB.','error');e.target.value='';return;}showUploadProgress('Atualizando foto…','Carregando a foto do seu perfil.');try{designer.photo=await new Promise((res,rej)=>{const r=new FileReader();r.onprogress=ev=>{if(ev.lengthComputable)updateUploadProgress(Math.max(10,(ev.loaded/ev.total)*90),'Carregando a foto do perfil…');};r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(f);});updateUploadProgress(100,'Foto atualizada com sucesso.');persist();await saveRemoteProfile();renderIdentity();renderProfile();hideUploadProgress(true);}catch(err){hideUploadProgress(false);toast('Não foi possível atualizar a foto.','error');}finally{e.target.value='';}};$('#exportBackupBtn').onclick=exportBackup;$('#importBackup').onchange=e=>{if(e.target.files[0])importBackup(e.target.files[0]);};
+ let draggedOrderId=null;
+ $('#ordersTable').addEventListener('dragstart',e=>{const card=e.target.closest('[data-drag-order]');if(!card)return;draggedOrderId=card.dataset.dragOrder;card.classList.add('is-dragging');e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',draggedOrderId);});
+ $('#ordersTable').addEventListener('dragend',e=>{const card=e.target.closest('[data-drag-order]');card?.classList.remove('is-dragging');$$('.order-stage.is-drop-target').forEach(x=>x.classList.remove('is-drop-target'));draggedOrderId=null;});
+ $('#ordersTable').addEventListener('dragover',e=>{const stage=e.target.closest('[data-stage]');if(!stage)return;e.preventDefault();e.dataTransfer.dropEffect='move';$$('.order-stage.is-drop-target').forEach(x=>x.classList.remove('is-drop-target'));stage.classList.add('is-drop-target');});
+ $('#ordersTable').addEventListener('dragleave',e=>{const stage=e.target.closest('[data-stage]');if(stage&&!stage.contains(e.relatedTarget))stage.classList.remove('is-drop-target');});
+ $('#ordersTable').addEventListener('drop',e=>{const stage=e.target.closest('[data-stage]');if(!stage)return;e.preventDefault();stage.classList.remove('is-drop-target');const id=draggedOrderId||e.dataTransfer.getData('text/plain');if(!id)return;const o=orders.find(x=>String(x.id)===String(id));if(!o)return;const next=stage.dataset.stage;if(o.status===next){toast('O pedido já está nesta etapa.','info');return;}const old=o.status;o.status=next;if(next==='Pago'||next==='Finalizado')o.paid=true;if(old==='Pago'&&next!=='Pago'&&next!=='Finalizado')o.paid=false;addHistory(o,`Pedido movido de ${old} para ${next}`);persist();render();syncOrderTracking(o);notify(`Pedido movido para ${next}`,`${o.project} • ${o.client}`,'info','pedidos',o.id);toast(`Pedido movido para ${next}.`);});
  document.addEventListener('click',handleDelegated);document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeModal();$('#notificationPanel').classList.remove('open');}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='n'){e.preventDefault();openOrder();}});
 }
 function handleDelegated(e){const a=e.target.closest('[data-action]');if(a){const action=a.dataset.action;if(action==='new-order')openOrder();if(action==='new-client')openClientForm();if(action==='new-quote')openQuoteForm();if(action==='new-catalog')openCatalogForm();if(action==='copy-briefing')generateLink();}
@@ -926,6 +1026,7 @@ function handleDelegated(e){const a=e.target.closest('[data-action]');if(a){cons
  const purge=e.target.closest('[data-purge-trash]');if(purge)purgeTrash(purge.dataset.purgeTrash);
  const pdf=e.target.closest('[data-order-pdf]');if(pdf)generateOrderPDF(pdf.dataset.orderPdf);
  const paid=e.target.closest('[data-toggle-paid]');if(paid){togglePaid(paid.dataset.togglePaid);if($('#modalRoot').innerHTML)openOrderView(paid.dataset.togglePaid);}
+ const share=e.target.closest('[data-share-tracking]');if(share){shareOrderTracking(share.dataset.shareTracking);return;}
  const move=e.target.closest('[data-move-status]');if(move&&!move.disabled){moveStatus(move.dataset.moveStatus,Number(move.dataset.direction)||1);}
  const cyc=e.target.closest('[data-cycle-status]');if(cyc)cycleStatus(cyc.dataset.cycleStatus);
  const delC=e.target.closest('[data-delete-client]');if(delC){deleteClient(delC.dataset.deleteClient);return;}
@@ -948,7 +1049,7 @@ function handleDelegated(e){const a=e.target.closest('[data-action]');if(a){cons
 
 
 async function init(){
-  setupEvents();setupPublic();document.body.classList.add('dark');
+  setupEvents();setupPublic();setupTracking();document.body.classList.add('dark');
   if(handlePublicHash())return;
   if(!supabaseClient){initSupabaseClient();}
   try{

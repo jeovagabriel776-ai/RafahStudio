@@ -95,3 +95,7 @@ O perfil A deve voltar.
 Teste 5:
 Abrir o site em outro navegador e entrar com A.
 O Supabase deve reconhecer a conta A.
+
+
+NOVA FUNÇÃO — ACOMPANHAMENTO DE PEDIDOS
+Execute também a parte final do supabase_setup.sql que cria order_tracking. Depois de atualizar o site, abra um pedido e use 'Acompanhar pedido' para gerar o link privado do cliente. O cliente não precisa de login e vê somente aquele pedido. O painel atualiza o status do link quando o designer move o pedido.

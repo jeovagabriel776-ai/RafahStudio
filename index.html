@@ -51,7 +51,21 @@
     </div>
   </section>
 
-  <section id="publicPage" class="public-page hidden">
+  <section id="trackingPage" class="tracking-page hidden">
+  <div class="tracking-shell">
+    <header class="tracking-top"><div class="auth-brand logo-only"><span class="logo-slot"><img class="site-logo" src="assets/logo.svg" alt="Logo"></span></div><div class="tracking-live"><i></i> Acompanhamento ao vivo</div></header>
+    <div id="trackingLoading" class="tracking-loading"><div class="tracking-spinner"></div><b>Carregando seu pedido…</b><span>Buscando a atualização mais recente.</span></div>
+    <div id="trackingError" class="tracking-error hidden"><div class="success-icon">!</div><span class="eyebrow">ACOMPANHAMENTO</span><h1>Não foi possível abrir este pedido.</h1><p id="trackingErrorText">Verifique se o link está correto ou peça um novo ao designer.</p></div>
+    <main id="trackingContent" class="tracking-content hidden">
+      <div class="tracking-hero"><div><span class="eyebrow">PEDIDO DE <b id="trackingBrandName">RafahStudio</b></span><h1 id="trackingProject">Seu pedido</h1><p>Olá, <b id="trackingClient">Cliente</b>. Aqui você acompanha cada etapa da sua arte.</p></div><div id="trackingDeadlineTag"></div></div>
+      <section class="tracking-status-card"><div class="tracking-status-row"><div><span class="eyebrow">STATUS ATUAL</span><h2 id="trackingStatus">Pedido recebido</h2><p id="trackingStatusDesc">Aguarde enquanto o pedido avança.</p></div><strong id="trackingProgressValue">0%</strong></div><div class="tracking-progress"><span id="trackingProgress"></span></div><div class="tracking-meta"><span><small>Serviço</small><b id="trackingService">Projeto</b></span><span><small>Prazo</small><b id="trackingDeadline">A definir</b></span><span><small>Atualização</small><b>Automática</b></span></div></section>
+      <section class="tracking-layout"><div class="tracking-card"><div class="tracking-card-head"><div><span class="eyebrow">JORNADA DO PEDIDO</span><h3>Acompanhe a produção</h3></div><span class="tracking-pulse">● ao vivo</span></div><div id="trackingSteps" class="tracking-steps"></div></div><aside class="tracking-side"><div class="tracking-side-card"><span class="eyebrow">PRECISA DE AJUDA?</span><h3>Fale com o designer</h3><p>Se precisar enviar uma informação ou tirar uma dúvida, use um dos canais abaixo.</p><div id="trackingSocials" class="tracking-socials"></div></div><div class="tracking-side-card mini"><b>Seu acesso é privado</b><span>Este link mostra somente as informações deste pedido.</span></div></aside></section>
+      <footer class="tracking-footer">RafahStudio • acompanhamento de pedido <span>Atualiza automaticamente</span></footer>
+    </main>
+  </div>
+</section>
+
+<section id="publicPage" class="public-page hidden">
     <div class="public-wrap">
       <div class="public-top"><div class="auth-brand logo-only"><span class="logo-slot"><img class="site-logo" src="assets/logo.svg" alt="Logo"></span></div><div class="public-tools"><span class="chip">BRIEFING ONLINE</span></div></div>
       <div id="publicFormView">

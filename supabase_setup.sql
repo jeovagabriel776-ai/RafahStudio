@@ -396,3 +396,52 @@ grant execute on function public.get_public_profile_for_token(text) to anon,auth
 
 -- O estado Finalizado é usado depois do pagamento para indicar que o projeto
 -- foi concluído e pode ser enviado ao catálogo.
+
+
+-- ============================================================
+-- RAFAHSTUDIO — ACOMPANHAMENTO PÚBLICO DE PEDIDOS
+-- O cliente recebe um token privado e acompanha somente aquele pedido.
+create table if not exists public.order_tracking (
+  tracking_token text primary key,
+  owner_secret text not null,
+  order_id text not null,
+  public_token text,
+  client_name text not null default '',
+  project_name text not null default '',
+  service_type text not null default '',
+  deadline date,
+  status text not null default 'Novo',
+  value numeric(12,2) not null default 0,
+  updated_at timestamptz not null default now(),
+  created_at timestamptz not null default now()
+);
+create index if not exists order_tracking_owner_idx on public.order_tracking(owner_secret);
+create index if not exists order_tracking_updated_idx on public.order_tracking(updated_at desc);
+alter table public.order_tracking enable row level security;
+drop policy if exists "order_tracking_no_direct_select" on public.order_tracking;
+drop policy if exists "order_tracking_no_direct_insert" on public.order_tracking;
+alter table public.order_tracking add column if not exists public_token text;
+drop function if exists public.upsert_order_tracking(text,text,text,text,text,text,date,text,numeric);
+drop function if exists public.upsert_order_tracking(text,text,text,text,text,text,text,date,text,numeric);
+drop function if exists public.get_order_tracking(text);
+create or replace function public.upsert_order_tracking(
+  p_tracking_token text, p_owner_secret text, p_order_id text, p_public_token text, p_client_name text,
+  p_project_name text, p_service_type text, p_deadline date, p_status text, p_value numeric
+) returns void language plpgsql security definer set search_path=public as $$
+begin
+  if length(coalesce(p_tracking_token,'')) < 20 or length(coalesce(p_owner_secret,'')) < 20 then raise exception 'Token inválido'; end if;
+  insert into public.order_tracking(tracking_token,owner_secret,order_id,public_token,client_name,project_name,service_type,deadline,status,value)
+  values(p_tracking_token,p_owner_secret,p_order_id,p_public_token,trim(p_client_name),trim(p_project_name),trim(p_service_type),p_deadline,coalesce(p_status,'Novo'),coalesce(p_value,0))
+  on conflict(tracking_token) do update set
+    owner_secret=excluded.owner_secret,order_id=excluded.order_id,public_token=excluded.public_token,client_name=excluded.client_name,
+    project_name=excluded.project_name,service_type=excluded.service_type,deadline=excluded.deadline,
+    status=excluded.status,value=excluded.value,updated_at=now();
+end;$$;
+create or replace function public.get_order_tracking(p_tracking_token text)
+returns table(tracking_token text,public_token text,client_name text,project_name text,service_type text,deadline date,status text,updated_at timestamptz)
+language sql security definer set search_path=public as $$
+  select t.tracking_token,t.public_token,t.client_name,t.project_name,t.service_type,t.deadline,t.status,t.updated_at
+  from public.order_tracking t where t.tracking_token=p_tracking_token limit 1;
+$$;
+grant execute on function public.upsert_order_tracking(text,text,text,text,text,text,text,date,text,numeric) to authenticated,anon;
+grant execute on function public.get_order_tracking(text) to authenticated,anon;
