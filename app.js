@@ -955,7 +955,48 @@ function setupPublic(){
   $('#publicCatalogToggle')?.addEventListener('click',()=>{const d=$('#publicCatalogDrawer');if(!d)return;d.classList.toggle('hidden');const b=$('#publicCatalogToggle');b.classList.toggle('open',!d.classList.contains('hidden'));});
   $('#publicFormView')?.classList.remove('hidden');
   $('#publicSuccess')?.classList.add('hidden');
-  async function loadPublicCatalog(){const token=briefingTokenFromHash();if(!token||!supabaseClient)return;try{const {data,error}=await supabaseClient.rpc('get_catalog_for_public',{p_public_token:token});if(error)throw error;publicCatalog=Array.isArray(data)?data:[];const sec=$('#publicCatalogSection'),grid=$('#publicCatalogGrid');if(!publicCatalog.length){sec?.classList.add('hidden');return;}sec?.classList.remove('hidden');const drawer=$('#publicCatalogDrawer');if(drawer)drawer.classList.add('hidden');grid.innerHTML=publicCatalog.map(x=>`<button type="button" class="public-catalog-item" data-catalog-id="${x.id}"><span class="public-catalog-image"><img src="${esc(x.image_url)}" alt="${esc(x.title)}"></span><span><b>${esc(x.title)}</b><small>${esc(x.description||'')}</small></span><i>✓</i></button>`).join('');grid.querySelectorAll('[data-catalog-id]').forEach(btn=>btn.onclick=()=>{const id=btn.dataset.catalogId;const found=publicCatalog.find(x=>String(x.id)===String(id));if(!found)return;const exists=selectedCatalog.some(x=>String(x.id)===String(id));if(exists){selectedCatalog=selectedCatalog.filter(x=>String(x.id)!==String(id));btn.classList.remove('selected');}else{selectedCatalog.push(found);btn.classList.add('selected');}$('#catalogSelectionNote').textContent=selectedCatalog.length?`Selecionadas: ${selectedCatalog.map(x=>x.title).join(', ')}`:'Nenhuma arte selecionada.';});}catch(e){console.warn('Catálogo público:',e);}}
+  async function loadPublicCatalog(){const token=briefingTokenFromHash();if(!token||!supabaseClient)return;try{const {data,error}=await supabaseClient.rpc('get_catalog_for_public',{p_public_token:token});if(error)throw error;publicCatalog=Array.isArray(data)?data:[];const sec=$('#publicCatalogSection'),grid=$('#publicCatalogGrid');if(!publicCatalog.length){sec?.classList.add('hidden');return;}sec?.classList.remove('hidden');const drawer=$('#publicCatalogDrawer');if(drawer)drawer.classList.add('hidden');grid.innerHTML=publicCatalog.map(x=>`<button type="button" class="public-catalog-item" data-catalog-id="${x.id}"><span class="public-catalog-image"><img src="${esc(x.image_url)}" alt="${esc(x.title)}"></span><span><b>${esc(x.title)}</b><small>${esc(x.description||'')}</small></span><i>✓</i><em>Ver arte</em></button>`).join('');
+grid.querySelectorAll('[data-catalog-id]').forEach(btn=>btn.onclick=()=>{
+  const id=btn.dataset.catalogId;
+  const found=publicCatalog.find(x=>String(x.id)===String(id));
+  if(!found)return;
+  openPublicCatalogPreview(found);
+});
+function applyCatalogSelection(found){
+  const id=String(found.id);
+  const exists=selectedCatalog.some(x=>String(x.id)===id);
+  if(exists) selectedCatalog=selectedCatalog.filter(x=>String(x.id)!==id);
+  else selectedCatalog.push(found);
+  const btn=grid.querySelector(`[data-catalog-id="${CSS.escape(id)}"]`);
+  btn?.classList.toggle('selected',!exists);
+  $('#catalogSelectionNote').textContent=selectedCatalog.length?`Selecionadas: ${selectedCatalog.map(x=>x.title).join(', ')}`:'Nenhuma arte selecionada.';
+}
+function openPublicCatalogPreview(found){
+  let modal=$('#publicCatalogPreviewModal');
+  if(!modal){
+    modal=document.createElement('div');
+    modal.id='publicCatalogPreviewModal';
+    modal.className='public-catalog-preview-modal hidden';
+    document.body.appendChild(modal);
+  }
+  const selected=selectedCatalog.some(x=>String(x.id)===String(found.id));
+  modal.innerHTML=`<div class="public-catalog-preview-backdrop" data-catalog-preview-close></div>
+    <div class="public-catalog-preview-card" role="dialog" aria-modal="true" aria-label="Visualização da arte">
+      <button type="button" class="public-catalog-preview-close" data-catalog-preview-close aria-label="Fechar">×</button>
+      <div class="public-catalog-preview-image"><img src="${esc(found.image_url)}" alt="${esc(found.title)}"></div>
+      <div class="public-catalog-preview-info"><span>REFERÊNCIA DO CATÁLOGO</span><h3>${esc(found.title)}</h3>${found.description?`<p>${esc(found.description)}</p>`:''}</div>
+      <button type="button" class="btn primary public-catalog-choose" data-catalog-preview-choose>${selected?'✓ Arte escolhida':'Escolher esta arte'}</button>
+    </div>`;
+  modal.classList.remove('hidden');
+  const close=()=>modal.classList.add('hidden');
+  modal.querySelectorAll('[data-catalog-preview-close]').forEach(x=>x.onclick=close);
+  modal.querySelector('[data-catalog-preview-choose]').onclick=()=>{
+    applyCatalogSelection(found);
+    const nowSelected=selectedCatalog.some(x=>String(x.id)===String(found.id));
+    modal.querySelector('[data-catalog-preview-choose]').textContent=nowSelected?'✓ Arte escolhida':'Escolher esta arte';
+    toast(nowSelected?'Arte adicionada às referências.':'Arte removida das referências.','info');
+  };
+}}catch(e){console.warn('Catálogo público:',e);}}
   function paintPeople(){ $('#peopleList').innerHTML=people.map((p,i)=>`<div class="person-row"><div class="person-num">${i+1}</div><label>Nome<input data-person-name="${i}" value="${esc(p.name)}" required></label><label>Participação / informação<input data-person-info="${i}" value="${esc(p.info)}"></label><label class="person-photo">Foto<input data-person-photo="${i}" type="file" accept="image/*"><small>${p.photo?.name||'Opcional'}</small></label><button type="button" class="icon-action danger" data-remove-person="${i}">×</button></div>`).join('');}
   $('#addPersonBtn').onclick=()=>{people.push({name:'',info:'',photo:null});paintPeople();};
   $('#peopleList').addEventListener('input',e=>{const i=e.target.dataset.personName??e.target.dataset.personInfo;if(i!==undefined){if(e.target.dataset.personName!==undefined)people[i].name=e.target.value;else people[i].info=e.target.value;}});
