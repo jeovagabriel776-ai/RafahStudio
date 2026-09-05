@@ -63,6 +63,7 @@ end;
 $$;
 
 -- Cliente envia o briefing usando apenas o token público presente no link.
+drop function if exists public.submit_briefing(text,uuid,text,text,text,date,text,text,jsonb,text,text,jsonb);
 create or replace function public.submit_briefing(
   p_public_token text,
   p_briefing_id uuid,
@@ -77,21 +78,27 @@ create or replace function public.submit_briefing(
   p_notes text,
   p_files jsonb
 )
-returns uuid
+returns jsonb
 language plpgsql
 security definer
 set search_path = public
 as $$
-declare v_owner_secret text; v_id uuid;
+declare
+  v_owner_secret text;
+  v_tracking_token text;
 begin
-  select owner_secret into v_owner_secret from public.briefing_links where public_token = p_public_token;
+  select owner_secret into v_owner_secret from public.briefing_links where public_token=p_public_token;
   if v_owner_secret is null then raise exception 'Link de briefing inválido ou expirado'; end if;
   insert into public.briefings(id,owner_secret,client_name,whatsapp,project_name,deadline,service_type,texts,people,references_text,notes,files)
-  values(p_briefing_id,v_owner_secret,trim(p_client_name),trim(p_whatsapp),trim(p_project_name),p_deadline,p_service_type,p_texts,coalesce(p_people,'[]'::jsonb),p_references_text,p_notes,coalesce(p_files,'[]'::jsonb))
-  returning id into v_id;
-  return v_id;
+  values(p_briefing_id,v_owner_secret,trim(p_client_name),trim(p_whatsapp),trim(p_project_name),p_deadline,p_service_type,p_texts,coalesce(p_people,'[]'::jsonb),p_references_text,p_notes,coalesce(p_files,'[]'::jsonb));
+  v_tracking_token := encode(gen_random_bytes(24),'hex');
+  insert into public.order_tracking(tracking_token,owner_secret,order_id,public_token,client_name,project_name,service_type,deadline,status,value)
+  values(v_tracking_token,v_owner_secret,p_briefing_id::text,p_public_token,trim(p_client_name),trim(p_project_name),trim(p_service_type),p_deadline,'Novo',0);
+  return jsonb_build_object('briefing_id',p_briefing_id,'tracking_token',v_tracking_token);
 end;
 $$;
+
+grant execute on function public.submit_briefing(text,uuid,text,text,text,date,text,text,jsonb,text,text,jsonb) to anon, authenticated;
 
 -- Somente o designer que possui o segredo local da conta consegue ler os próprios briefings.
 create or replace function public.get_briefings_for_owner(p_owner_secret text)
@@ -470,6 +477,18 @@ grant execute on function public.upsert_order_tracking(text,text,text,text,text,
 grant execute on function public.get_order_tracking(text) to authenticated,anon;
 
 
+-- Lookup privado dos tokens de acompanhamento do próprio designer.
+drop function if exists public.get_order_tracking_for_owner(text);
+create or replace function public.get_order_tracking_for_owner(p_owner_secret text)
+returns table(order_id text,tracking_token text,status text,updated_at timestamptz)
+language sql security definer set search_path=public as $$
+  select t.order_id,t.tracking_token,t.status,t.updated_at
+  from public.order_tracking t
+  where t.owner_secret=p_owner_secret
+  order by t.updated_at desc;
+$$;
+grant execute on function public.get_order_tracking_for_owner(text) to authenticated;
+
 -- ==========================================================
 -- RAFAHSTUDIO 2026 — SINCRONIZAÇÃO ENTRE DISPOSITIVOS
 -- ==========================================================
@@ -621,3 +640,8 @@ language sql security definer set search_path=public as $$
   limit 1;
 $$;
 grant execute on function public.get_order_tracking(text) to anon,authenticated;
+
+-- ==========================================================
+-- RAFAHSTUDIO 1.4 — REALTIME SOMENTE POR BROADCAST
+-- O cliente não recebe leitura direta das tabelas; o canal usa token privado.
+-- ==========================================================
