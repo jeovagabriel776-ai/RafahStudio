@@ -699,3 +699,27 @@ body{background:
   .client-tracking-admin .detail-card-head{align-items:stretch;gap:10px;flex-direction:column}
   .orders-board-wrap{height:calc(100dvh - 205px)!important;min-height:440px!important}
 }
+
+
+/* PERFORMANCE 1.0 — mantém o visual glass, mas reduz o custo de renderização. */
+.order-card,.client-card,.catalog-card,.quote-row,.deadline-row,.list-row,.detail-card,.tracking-feed-item,.designer-track-event{
+  content-visibility:auto;
+  contain-intrinsic-size:180px;
+}
+.order-stage-body{
+  contain:layout paint style;
+}
+@media (max-width:700px){
+  /* Blur forte é bonito, mas é um dos efeitos mais caros em celulares. */
+  .card,.table-card,.order-stage,.order-card,.modal,.tracking-card,.tracking-status-card,.tracking-side-card,.notification-panel,
+  .rs-notification-panel,.profile-cover-edit,.public-social-dock,.btn.secondary,.order-card-art span,.tracking-art-preview span{
+    backdrop-filter:blur(8px) !important;
+    -webkit-backdrop-filter:blur(8px) !important;
+  }
+  .page.active{animation:none;}
+  .order-card:before{display:none;}
+  .tracking-content{animation:none;}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.001ms !important;animation-iteration-count:1 !important;transition-duration:.001ms !important;scroll-behavior:auto !important;}
+}

@@ -237,7 +237,7 @@ async function syncTrackingEventsForOwner(){
         }
       }
     }
-    if(changed){persist();render();for(const o of orders.filter(x=>x.trackingToken))syncOrderTracking(o);}
+    if(changed){persist();renderSoon();for(const o of orders.filter(x=>x.trackingToken))syncOrderTracking(o);}
   }catch(e){console.warn('[RafahStudio] Interações do cliente:',e);}
 }
 
@@ -387,7 +387,7 @@ async function syncOnlineBriefings(){
       return true;
     });
 
-    if(changed){persist();render();}
+    if(changed){persist();renderSoon();}
   }catch(err){
     console.error('RafahStudio Supabase:',err);
   }finally{
@@ -411,6 +411,10 @@ let trash = read(KEYS.trash, []);
 let deletedRemoteIds = read(KEYS.deletedRemote, []);
 let deletedRemoteFingerprints = read(KEYS.deletedRemoteFingerprints, []);
 let orderFilter = 'all', editingOrderId=null, editingClientId=null, editingQuoteId=null;
+let currentPage = 'dashboard';
+let renderFramePending = false;
+let liveSyncTimers = [];
+let trackingPublicRefreshTimer = null;
 
 // Migração do projeto antigo: preserva o que já existe e normaliza os status.
 function migrateLegacy(){
@@ -604,10 +608,34 @@ function formatRelative(iso){const diff=Math.max(0,Date.now()-new Date(iso).getT
 function statusClass(s){return ({'Novo':'status-new','Em andamento':'status-doing','Esperando aprovação':'status-wait','Alteração':'status-change','Entregue':'status-done','Pago':'status-paid','Finalizado':'status-finalized'})[s]||'';}
 function priorityClass(p){return ({Alta:'priority-high',Urgente:'priority-urgent'})[p]||'';}
 function pageMeta(page){return {dashboard:['VISÃO GERAL','Dashboard'],pedidos:['PROJETOS','Pedidos'],clientes:['RELACIONAMENTO','Clientes'],catalogo:['PORTFÓLIO','Catálogo'],orcamentos:['COMERCIAL','Orçamentos'],financeiro:['FINANCEIRO','Financeiro'],perfil:['SUA CONTA','Meu perfil']}[page]||['','RafahStudio'];}
-function go(page){ $$('.page').forEach(p=>p.classList.toggle('active',p.id===page)); $$('.nav-item[data-page]').forEach(n=>n.classList.toggle('active',n.dataset.page===page)); const [ey,t]=pageMeta(page); $('#pageEyebrow').textContent=ey; $('#pageTitle').textContent=t; $('#notificationPanel').classList.remove('open'); $('#sidebar').classList.remove('mobile-open'); window.scrollTo({top:0,behavior:'smooth'}); }
+function go(page){ currentPage=page; $$('.page').forEach(p=>p.classList.toggle('active',p.id===page)); $$('.nav-item[data-page]').forEach(n=>n.classList.toggle('active',n.dataset.page===page)); const [ey,t]=pageMeta(page); $('#pageEyebrow').textContent=ey; $('#pageTitle').textContent=t; $('#notificationPanel').classList.remove('open'); $('#sidebar').classList.remove('mobile-open'); render(); window.scrollTo({top:0,behavior:'smooth'}); }
 
-function render(){ if(!currentUser) return; renderIdentity(); renderDashboard(); renderOrders(); renderClients(); renderCatalog(); renderQuotes(); renderFinance(); renderNotifications(); renderProfile(); }
+function render(){
+  if(!currentUser) return;
+  // Renderiza somente a tela visível. Antes, cada alteração reconstruía todas as abas
+  // (pedidos, clientes, catálogo, orçamento, financeiro e perfil), o que ficava caro
+  // principalmente no celular.
+  renderIdentity();
+  switch(currentPage){
+    case 'pedidos': renderOrders(); break;
+    case 'clientes': renderClients(); break;
+    case 'catalogo': renderCatalog(); break;
+    case 'orcamentos': renderQuotes(); break;
+    case 'financeiro': renderFinance(); break;
+    case 'perfil': renderProfile(); break;
+    case 'dashboard':
+    default: renderDashboard(); break;
+  }
+  requestAnimationFrame(()=>{$$('img', $('#'+currentPage)||document).forEach(img=>{img.loading='lazy';img.decoding='async';});});
+}
 const renderAll = render;
+function renderSoon(){
+  if(renderFramePending)return;
+  renderFramePending=true;
+  const cb=()=>{renderFramePending=false;render();};
+  if('requestAnimationFrame' in window)requestAnimationFrame(cb);else setTimeout(cb,0);
+}
+
 function renderIdentity(){
  const name=designer.name||currentUser.name||'Designer'; $('#dashName').textContent=name.split(/\s+/)[0]; $('#sideName').textContent=name; $('#sideRole').textContent=designer.area||currentUser.area||'Designer gráfico'; $('#sideUsername').textContent='@'+(currentUser.username||currentUser.user||'usuario'); $('#profileUser').textContent=currentUser.username||currentUser.user||currentUser.email||'—'; $('#todayLabel').textContent=new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'});
  ['sideAvatar','topAvatar','profileAvatar'].forEach(id=>{const el=$('#'+id); if(!el)return; if(designer.photo){el.innerHTML=`<img src="${designer.photo}" alt="Foto de ${esc(name)}">`}else el.textContent=initials(name);});
@@ -691,7 +719,20 @@ function renderOrders(){
  $('#ordersTable').innerHTML=columns||`<div class="empty-state"><span>▤</span><h3>Nenhum pedido encontrado</h3><p>Crie um pedido ou envie seu link de briefing para começar.</p><button class="btn primary" data-action="new-order">+ Novo pedido</button></div>`;
 }
 function clientStats(name){const os=orders.filter(o=>o.client.toLowerCase()===name.toLowerCase()); return {count:os.length,total:os.reduce((a,o)=>a+o.value,0),paid:os.filter(o=>o.paid||o.status==='Pago').reduce((a,o)=>a+o.value,0)};}
-async function refreshCatalogFromSupabase(){if(!supabaseClient||!currentUser)return;try{const {data,error}=await supabaseClient.rpc('get_catalog_for_owner',{p_owner_secret:getOwnerToken()});if(!error&&Array.isArray(data)){catalog=data.map(x=>({...x,created:x.created_at||x.created||todayISO()}));persist();renderCatalog();}}catch(e){console.warn('Catálogo online:',e);}}
+let catalogRemoteFingerprint='';
+async function refreshCatalogFromSupabase(){
+  if(!supabaseClient||!currentUser||document.hidden)return;
+  try{
+    const {data,error}=await supabaseClient.rpc('get_catalog_for_owner',{p_owner_secret:getOwnerToken()});
+    if(!error&&Array.isArray(data)){
+      const next=data.map(x=>({...x,created:x.created_at||x.created||todayISO()}));
+      const fp=JSON.stringify(next.map(x=>[x.id,x.updated_at||x.created_at||x.created,x.image_url]));
+      if(fp===catalogRemoteFingerprint)return;
+      catalogRemoteFingerprint=fp;
+      catalog=next;persist();if(currentPage==='catalogo')renderCatalog();
+    }
+  }catch(e){console.warn('Catálogo online:',e);}
+}
 function renderCatalog(){const q=($('#catalogSearch')?.value||'').toLowerCase().trim();const list=catalog.filter(x=>`${x.title||''} ${x.description||''}`.toLowerCase().includes(q));$('#catalogGrid')?.replaceChildren(...[]);const el=$('#catalogGrid');if(!el)return;el.innerHTML=list.map(x=>`<article class="catalog-card"><div class="catalog-cover">${x.image_url?`<img src="${esc(x.image_url)}" alt="${esc(x.title)}">`:'<span>▧</span>'}</div><div class="catalog-body"><h3>${esc(x.title)}</h3><p>${esc(x.description||'Referência do portfólio')}</p><div class="catalog-actions"><button class="btn secondary small" data-edit-catalog="${x.id}">Editar</button><button class="btn secondary small" data-delete-catalog="${x.id}">Remover</button></div></div></article>`).join('')||`<div class="empty-state"><span>▧</span><h3>Seu catálogo está vazio</h3><p>Adicione uma arte aprovada e paga para disponibilizá-la como referência.</p></div>`;}
 async function uploadCatalogImage(file){if(!supabaseClient)throw new Error('Supabase não está disponível.');const safe=(file.name||'catalogo').replace(/[^a-zA-Z0-9._-]/g,'_');const path=`catalog/${getOwnerToken()}/${Date.now()}-${safe}`;const {error}=await supabaseClient.storage.from('briefing-files').upload(path,file,{upsert:false,contentType:file.type||'image/jpeg'});if(error)throw error;return supabaseClient.storage.from('briefing-files').getPublicUrl(path).data.publicUrl;}
 function openCatalogForm(item=null,order=null){const x=item||{title:order?.project||'',description:order?`Referência de ${order.type||'projeto'}`:'',image_url:''};modal(`<div class="modal-head"><div><span class="eyebrow">CATÁLOGO</span><h2>${item?'Editar item':'Adicionar ao catálogo'}</h2></div><button class="close-modal" data-close-modal>×</button></div><form id="catalogForm"><label>Nome da arte<input id="catalogTitle" value="${esc(x.title)}" required></label><label>Descrição curta<textarea id="catalogDescription" rows="3">${esc(x.description||'')}</textarea></label><label class="upload-zone"><input id="catalogImage" type="file" accept="image/*"><span class="upload-icon">↑</span><b>Selecionar imagem da arte</b><small>Use uma imagem final, de preferência em boa resolução.</small></label><div id="catalogImagePreview" class="catalog-modal-preview">${x.image_url?`<img src="${esc(x.image_url)}" alt="Prévia">`:''}</div><div class="modal-actions"><button type="button" class="btn secondary" data-close-modal>Cancelar</button><button class="btn primary" type="submit">Salvar no catálogo</button></div></form>`);let selected=null;$('#catalogImage').onchange=e=>{selected=e.target.files[0]||null;if(selected){const r=new FileReader();r.onload=()=>$('#catalogImagePreview').innerHTML=`<img src="${r.result}" alt="Prévia">`;r.readAsDataURL(selected);}};$('#catalogForm').onsubmit=async e=>{e.preventDefault();const btn=e.submitter;btn.disabled=true;btn.textContent='Salvando…';try{let url=x.image_url||'';if(selected)url=await uploadCatalogImage(selected);if(!url)throw new Error('Escolha uma imagem para o item do catálogo.');const title=$('#catalogTitle').value.trim();const description=$('#catalogDescription').value.trim();if(!title)throw new Error('Informe o nome da arte.');if(item){const {error}=await supabaseClient.rpc('update_catalog_item',{p_owner_secret:getOwnerToken(),p_id:item.id,p_title:title,p_description:description,p_image_url:url});if(error)throw error;catalog=catalog.map(c=>c.id===item.id?{...c,title,description,image_url:url}:c);}else{const {data,error}=await supabaseClient.rpc('create_catalog_item',{p_owner_secret:getOwnerToken(),p_title:title,p_description:description,p_image_url:url});if(error)throw error;catalog.unshift({id:data,title,description,image_url:url,created:todayISO()});}persist();closeModal();renderCatalog();toast(item?'Item atualizado no catálogo.':'Arte adicionada ao catálogo.');}catch(err){toast(err?.message||'Não foi possível salvar o item.','error');btn.disabled=false;btn.textContent='Salvar no catálogo';}};}
@@ -827,13 +868,13 @@ function openOrder(order=null){
     <div class="order-editor-section"><div class="order-editor-head"><div><b>Arte pronta / arquivo final</b><small>Você pode anexar a arte pronta para visualizar no pedido e depois colocar no catálogo.</small></div></div><label class="upload-zone"><input id="manualReadyArt" type="file" accept="image/*,.pdf"><span class="upload-icon">↑</span><b>Adicionar arte pronta</b><small>${readyArt?.name?`Atual: ${esc(readyArt.name)}`:'Imagem ou PDF da arte final'}</small></label><div id="manualReadyPreview" class="ready-art-preview">${readyArt?.url||readyArt?.dataUrl?`<img src="${esc(readyArt.url||readyArt.dataUrl)}" alt="Arte pronta">`:''}</div></div>
     <div class="modal-actions"><button type="button" class="btn secondary" data-close-modal>Cancelar</button><button class="btn primary" type="submit">Salvar pedido</button></div>
   </form>`);
-  const paint=()=>{$('#manualPeopleList').innerHTML=people.map((p,i)=>{const photoSrc=p.photo?.dataUrl||p.photo?.url||'';return `<div class="manual-person-row"><span class="person-num">${i+1}</span>${photoSrc?`<img class="manual-person-preview" src="${esc(photoSrc)}" alt="Foto de ${esc(p.name||`Pessoa ${i+1}`)}">`:`<span class="manual-person-preview empty">👤</span>`}<input data-mp-name="${i}" value="${esc(p.name||'')}" placeholder="Nome da pessoa"><input data-mp-info="${i}" value="${esc(p.info||'')}" placeholder="Função / observação"><label class="mini-upload">Foto<input data-mp-photo="${i}" type="file" accept="image/*"></label><button type="button" class="icon-action danger" data-mp-remove="${i}">×</button></div>`;}).join('')||'<div class="stage-empty">Nenhuma pessoa adicionada.</div>';};
+  const paint=()=>{$('#manualPeopleList').innerHTML=people.map((p,i)=>{const photoSrc=p.photo?.previewUrl||p.photo?.dataUrl||p.photo?.url||'';return `<div class="manual-person-row"><span class="person-num">${i+1}</span>${photoSrc?`<img class="manual-person-preview" src="${esc(photoSrc)}" alt="Foto de ${esc(p.name||`Pessoa ${i+1}`)}">`:`<span class="manual-person-preview empty">👤</span>`}<input data-mp-name="${i}" value="${esc(p.name||'')}" placeholder="Nome da pessoa"><input data-mp-info="${i}" value="${esc(p.info||'')}" placeholder="Função / observação"><label class="mini-upload">Foto<input data-mp-photo="${i}" type="file" accept="image/*"></label><button type="button" class="icon-action danger" data-mp-remove="${i}">×</button></div>`;}).join('')||'<div class="stage-empty">Nenhuma pessoa adicionada.</div>';};
   paint();
   $('#manualAddPerson').onclick=()=>{people.push({name:'',info:'',photo:null});paint();};
   $('#manualPeopleList').oninput=e=>{const i=e.target.dataset.mpName??e.target.dataset.mpInfo;if(i!==undefined){if(e.target.dataset.mpName!==undefined)people[i].name=e.target.value;else people[i].info=e.target.value;}};
-  $('#manualPeopleList').onchange=async e=>{const i=e.target.dataset.mpPhoto;if(i!==undefined&&e.target.files[0]){const file=e.target.files[0];const dataUrl=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(file);});people[i].photo={name:file.name,type:file.type,size:file.size,file,dataUrl};paint();}};
+  $('#manualPeopleList').onchange=async e=>{const i=e.target.dataset.mpPhoto;if(i!==undefined&&e.target.files[0]){const file=e.target.files[0];const dataUrl=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(file);});people[i].photo={name:file.name,type:file.type,size:file.size,file,previewUrl:URL.createObjectURL(file)};paint();}};
   $('#manualPeopleList').onclick=e=>{const b=e.target.closest('[data-mp-remove]');if(b){people.splice(Number(b.dataset.mpRemove),1);paint();}};
-  $('#manualReadyArt').onchange=e=>{const f=e.target.files[0];if(!f)return;readyArt={name:f.name,type:f.type,size:f.size,file:f};const p=$('#manualReadyPreview');if(f.type.startsWith('image/')){const r=new FileReader();r.onload=()=>p.innerHTML=`<img src="${r.result}" alt="Arte pronta">`;r.readAsDataURL(f);}else p.innerHTML=`<div class="file-generic">${esc(f.name)}</div>`;};
+  $('#manualReadyArt').onchange=e=>{const f=e.target.files[0];if(!f)return;readyArt={name:f.name,type:f.type,size:f.size,file:f};const p=$('#manualReadyPreview');if(f.type.startsWith('image/')){p.innerHTML=`<img loading="lazy" decoding="async" src="${URL.createObjectURL(f)}" alt="Arte pronta">`;}else p.innerHTML=`<div class="file-generic">${esc(f.name)}</div>`;};
   $('#orderForm').onsubmit=async e=>{e.preventDefault();await saveOrder(order,people,readyArt);};
 }
 async function uploadOrderAsset(file,orderId,label){
@@ -895,9 +936,9 @@ function renderPeopleGallery(o){
   const remote=Array.isArray(o.briefing?.people)?o.briefing.people:[];
   const manual=Array.isArray(o.people)?o.people:[];
   const people=[...remote,...manual];
-  const withPhotos=people.map((p,i)=>({p,i,photo:p?.photo})).filter(x=>x.photo?.url||x.photo?.dataUrl);
+  const withPhotos=people.map((p,i)=>({p,i,photo:p?.photo})).filter(x=>x.photo?.url||x.photo?.dataUrl||x.photo?.previewUrl);
   if(!withPhotos.length)return`<div class="empty-mini center"><span>👤</span><div><b>Nenhuma foto de pessoa enviada.</b><small>As fotos adicionadas pelo cliente ou pelo designer aparecerão aqui.</small></div></div>`;
-  return withPhotos.map(({p,i,photo})=>{const src=photo.url||photo.dataUrl;return `<div class="file-tile"><img src="${esc(src)}" alt="${esc(p.name||`Pessoa ${i+1}`)}"><div><b>${esc(p.name||`Pessoa ${i+1}`)}</b><small>${esc(p.info||'Foto para a arte')}</small></div><a class="btn secondary small" href="${esc(src)}" target="_blank" rel="noopener">Abrir original</a></div>`;}).join('');
+  return withPhotos.map(({p,i,photo})=>{const src=photo.url||photo.previewUrl||photo.dataUrl;return `<div class="file-tile"><img src="${esc(src)}" alt="${esc(p.name||`Pessoa ${i+1}`)}"><div><b>${esc(p.name||`Pessoa ${i+1}`)}</b><small>${esc(p.info||'Foto para a arte')}</small></div><a class="btn secondary small" href="${esc(src)}" target="_blank" rel="noopener">Abrir original</a></div>`;}).join('');
 }
 function formatBytes(n){if(!n)return'arquivo';const u=['B','KB','MB','GB'];let i=0,x=n;while(x>=1024&&i<u.length-1){x/=1024;i++;}return`${x.toFixed(i?1:0)} ${u[i]}`;}
 function cycleStatus(id){const o=orders.find(x=>x.id===id);if(!o)return;const i=STATUS.indexOf(o.status);const next=STATUS[Math.min(i+1,STATUS.length-1)];if(next===o.status){toast('O pedido já está no status final.','info');return;}const old=o.status;o.status=next;if(next==='Pago'||next==='Finalizado')o.paid=true;addHistory(o,`Status alterado de ${old} para ${next}`);persist();render();closeModal();syncOrderTracking(o);notify(`Status atualizado: ${next}`,`${o.project} • ${o.client}`,'info','pedidos',o.id);toast(`Pedido movido para ${next}.`);}
@@ -1028,7 +1069,7 @@ async function syncPublicProfileLink(token=getPublicToken()){
 function copyText(text){navigator.clipboard?.writeText(text).then(()=>toast('Link copiado.')).catch(()=>{const ta=document.createElement('textarea');ta.value=text;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();toast('Link copiado.');});}
 function openPublic(){ $('#authScreen').classList.add('hidden');$('#app').classList.add('hidden');$('#publicPage').classList.remove('hidden'); }
 function handlePublicHash(){const isBriefing=location.hash.startsWith('#briefing=');const isTracking=location.hash.startsWith('#pedido=');if(!isBriefing&&!isTracking)return false;if(isTracking){$('#authScreen').classList.add('hidden');$('#app').classList.add('hidden');$('#publicPage').classList.add('hidden');$('#trackingPage').classList.remove('hidden');return true;}openPublic();return true;}
-async function readFiles(fileList){const arr=[];for(const f of [...fileList]){if(f.size>8*1024*1024){toast(`${f.name} é maior que 8 MB e não foi anexado.`,'error');continue;}const data=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(f);});arr.push({id:uid('file'),name:f.name,type:f.type,size:f.size,dataUrl:data,file:f});}return arr;}
+async function readFiles(fileList){const arr=[];for(const f of [...fileList]){if(f.size>8*1024*1024){toast(`${f.name} é maior que 8 MB e não foi anexado.`,'error');continue;}arr.push({id:uid('file'),name:f.name,type:f.type,size:f.size,previewUrl:URL.createObjectURL(f),file:f});}return arr;}
 let publicProfileCache={};
 function publicProfileFromHash(){
   if(publicProfileCache&&Object.keys(publicProfileCache).length)return publicProfileCache;
@@ -1131,7 +1172,7 @@ function setupTracking(){
   $('#trackingChangeBtn')?.addEventListener('click',submitPublicAlteration);
   $('#trackingApproveBtn')?.addEventListener('click',submitPublicApproval);
   $('#trackingFeed')?.addEventListener('click',e=>{const b=e.target.closest('[data-public-art]');if(b)modal(`<div class="image-modal"><button class="close-modal" data-close-modal>×</button><img src="${esc(b.dataset.publicArt)}" alt="Pré-visualização da arte"></div>`);});
-  setInterval(()=>{if(location.hash.startsWith('#pedido='))loadPublicTracking();},12000);
+  if(!trackingPublicRefreshTimer){ trackingPublicRefreshTimer=setInterval(()=>{if(!document.hidden&&location.hash.startsWith('#pedido='))loadPublicTracking();},18000); }
 }
 function setupPublic(){
   let people=[];let publicCatalog=[];let selectedCatalog=[];
@@ -1274,12 +1315,33 @@ function handleDelegated(e){const a=e.target.closest('[data-action]');if(a){cons
 
 
 let liveSyncStarted=false;
+async function runLiveSyncCycle(kind){
+  if(document.hidden||!navigator.onLine)return;
+  try{
+    if(kind==='briefings')await syncOnlineBriefings();
+    else if(kind==='tracking')await syncTrackingEventsForOwner();
+    else if(kind==='workspace')await refreshWorkspaceFromRemote();
+  }catch(e){console.warn('[RafahStudio] sincronização:',e);}
+}
+function scheduleLiveSync(kind,ms){
+  const timer=setTimeout(async function tick(){
+    await runLiveSyncCycle(kind);
+    const next=setTimeout(tick,ms);
+    liveSyncTimers.push(next);
+  },ms);
+  liveSyncTimers.push(timer);
+}
 function startLiveSync(){
   if(liveSyncStarted)return;liveSyncStarted=true;
-  setTimeout(()=>{syncOnlineBriefings();refreshCatalogFromSupabase();syncTrackingEventsForOwner();refreshWorkspaceFromRemote();},400);
-  setInterval(syncOnlineBriefings,30000);
-  setInterval(syncTrackingEventsForOwner,12000);
-  setInterval(refreshWorkspaceFromRemote,18000);
+  setTimeout(()=>{
+    if(document.hidden||!navigator.onLine)return;
+    runLiveSyncCycle('briefings');runLiveSyncCycle('tracking');runLiveSyncCycle('workspace');
+  },400);
+  scheduleLiveSync('briefings',45000);
+  scheduleLiveSync('tracking',20000);
+  scheduleLiveSync('workspace',30000);
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden){runLiveSyncCycle('briefings');runLiveSyncCycle('tracking');runLiveSyncCycle('workspace');}}, {passive:true});
+  window.addEventListener('online',()=>{runLiveSyncCycle('briefings');runLiveSyncCycle('tracking');runLiveSyncCycle('workspace');},{passive:true});
 }
 async function registerServiceWorker(){
   if(!('serviceWorker' in navigator)||location.protocol==='file:')return;
