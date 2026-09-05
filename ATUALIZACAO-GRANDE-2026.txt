@@ -1,0 +1,34 @@
+RAFAHSTUDIO — GRANDE ATUALIZAÇÃO 2026
+
+O que mudou nesta versão
+- Workspace online: pedidos, clientes, orçamentos, catálogo e financeiro passam a sincronizar entre PC e celular pela mesma conta.
+- Migração segura: se a nuvem estiver vazia e o computador tiver dados, os dados locais do computador são enviados para o Supabase.
+- ownerToken/publicToken também são sincronizados para manter briefing, catálogo e acompanhamento iguais em todos os aparelhos.
+- Página pública do pedido ganhou versões da arte, visualização ampliada, pedido de alteração e botão de aprovação.
+- Quando o cliente pede uma alteração, o acompanhamento muda para "Alteração" e o pedido do designer também muda automaticamente quando sincroniza.
+- Quando o cliente aprova, o pedido vai para "Entregue" e o designer recebe a atividade.
+- Dentro do pedido há "Enviar arte para aprovação": envie uma imagem e uma mensagem para aparecer no acompanhamento do cliente.
+- Rolagem vertical de cada coluna dos pedidos reforçada, inclusive no celular.
+- Visual glass/blur e transições reforçados.
+- Service Worker incluído: o site agora está preparado como PWA/instalável e usa notificações do sistema quando o navegador permite.
+
+PASSO OBRIGATÓRIO
+1. No Supabase, abra SQL Editor.
+2. Execute TODO o arquivo supabase_setup.sql desta versão.
+3. Publique TODOS os arquivos no GitHub Pages, inclusive sw.js.
+4. Depois da publicação, abra PRIMEIRO no computador que já possui seus pedidos e faça login.
+5. Aguarde alguns segundos para a primeira sincronização.
+6. Só depois abra a mesma conta no celular.
+7. No celular, toque no sino de notificações e permita notificações.
+
+IMPORTANTE SOBRE NOTIFICAÇÕES
+- Com o site/PWA aberto ou ativo em segundo plano, as novas alterações/aprovações podem gerar notificação do sistema, dependendo das regras do navegador.
+- Push com o app totalmente encerrado ainda exige Web Push (VAPID + backend/Edge Function). A base PWA já ficou pronta para essa próxima etapa.
+
+TESTE RECOMENDADO
+- No PC, abra um pedido e clique em "Acompanhar pedido".
+- Abra o link em outro navegador/celular.
+- No PC, clique em "Enviar arte para aprovação".
+- No celular, abra a imagem e clique em "Solicitar alteração".
+- Aguarde até ~12 segundos no painel do designer: o pedido deve entrar em "Alteração".
+- Depois envie outra versão e teste "Aprovar arte".

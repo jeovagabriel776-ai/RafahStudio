@@ -147,6 +147,100 @@ function trackingUrlForOrder(o){
 }
 async function syncOrderTracking(o){if(!o)return '';const token=await ensureOrderTracking(o);return token?trackingUrlForOrder(o):'';}
 
+
+async function fetchTrackingEvents(token){
+  if(!supabaseClient||!token)return [];
+  try{
+    const {data,error}=await supabaseClient.rpc('get_order_tracking_events',{p_tracking_token:token});
+    if(error)throw error;
+    return Array.isArray(data)?data:[];
+  }catch(e){console.warn('[RafahStudio] Eventos do acompanhamento:',e);return [];}
+}
+function renderTrackingEventCards(events=[]){
+  if(!events.length)return '<div class="tracking-feed-empty"><span>✦</span><div><b>Ainda não há atualizações visuais.</b><small>As artes e mensagens do designer aparecerão aqui.</small></div></div>';
+  return events.map(ev=>{
+    const img=ev.image_url?`<button type="button" class="tracking-art-preview" data-public-art="${esc(ev.image_url)}"><img src="${esc(ev.image_url)}" alt="Atualização da arte"><span>Ampliar arte ↗</span></button>`:'';
+    const label=ev.kind==='art'?'Nova versão da arte':ev.kind==='alteration'?'Alteração solicitada':ev.kind==='approval'?'Arte aprovada':'Atualização';
+    return `<article class="tracking-feed-item ${esc(ev.kind||'update')}"><div class="tracking-feed-marker">${ev.kind==='approval'?'✓':ev.kind==='alteration'?'↻':'✦'}</div><div class="tracking-feed-body"><div class="tracking-feed-meta"><b>${esc(label)}</b><small>${new Date(ev.created_at).toLocaleString('pt-BR')}</small></div>${ev.message?`<p>${esc(ev.message)}</p>`:''}${img}</div></article>`;
+  }).join('');
+}
+async function submitPublicAlteration(){
+  const token=decodeURIComponent(location.hash.slice('#pedido='.length));
+  const text=($('#trackingChangeText')?.value||'').trim();
+  if(text.length<3){alert('Descreva a alteração que você precisa.');return;}
+  const btn=$('#trackingChangeBtn');if(btn){btn.disabled=true;btn.textContent='Enviando…';}
+  try{
+    const {error}=await supabaseClient.rpc('submit_order_alteration',{p_tracking_token:token,p_message:text});
+    if(error)throw error;
+    $('#trackingChangeText').value='';
+    $('#trackingActionMessage').textContent='Alteração enviada. O designer já poderá ver sua solicitação.';
+    await loadPublicTracking();
+  }catch(e){$('#trackingActionMessage').textContent=e?.message||'Não foi possível enviar a alteração.';}
+  finally{if(btn){btn.disabled=false;btn.textContent='↻ Solicitar alteração';}}
+}
+async function submitPublicApproval(){
+  if(!confirm('Confirmar que esta arte está aprovada?'))return;
+  const token=decodeURIComponent(location.hash.slice('#pedido='.length));
+  const btn=$('#trackingApproveBtn');if(btn){btn.disabled=true;btn.textContent='Confirmando…';}
+  try{
+    const {error}=await supabaseClient.rpc('submit_order_approval',{p_tracking_token:token,p_message:'Arte aprovada pelo cliente.'});
+    if(error)throw error;
+    $('#trackingActionMessage').textContent='Arte aprovada com sucesso. Obrigado!';
+    await loadPublicTracking();
+  }catch(e){$('#trackingActionMessage').textContent=e?.message||'Não foi possível confirmar a aprovação.';}
+  finally{if(btn){btn.disabled=false;btn.textContent='✓ Aprovar arte';}}
+}
+async function sendTrackingArtUpdate(orderId){
+  const o=orders.find(x=>String(x.id)===String(orderId));if(!o)return;
+  await ensureOrderTracking(o);
+  modal(`<div class="modal-head"><div><span class="eyebrow">ACOMPANHAMENTO DO CLIENTE</span><h2>Enviar arte para aprovação</h2><p class="muted">A imagem aparecerá na página privada do pedido.</p></div><button class="close-modal" data-close-modal>×</button></div><form id="trackingUpdateForm"><label>Mensagem para o cliente<textarea id="trackingUpdateMessage" rows="4" placeholder="Ex.: Primeira versão pronta. Confira os detalhes e me diga se deseja algum ajuste."></textarea></label><label class="upload-zone"><input id="trackingUpdateFile" type="file" accept="image/*" required><span class="upload-icon">↑</span><b>Selecionar imagem da arte</b><small>PNG, JPG ou WEBP</small></label><div class="modal-actions"><button type="button" class="btn secondary" data-close-modal>Cancelar</button><button class="btn primary" type="submit">Enviar para o cliente</button></div></form>`);
+  $('#trackingUpdateForm').onsubmit=async e=>{
+    e.preventDefault();
+    const file=$('#trackingUpdateFile').files[0],msg=$('#trackingUpdateMessage').value.trim();
+    if(!file)return;
+    const btn=$('#trackingUpdateForm button[type="submit"]');btn.disabled=true;btn.textContent='Enviando…';
+    try{
+      showUploadProgress('Enviando atualização…','Publicando a nova versão para o cliente.');
+      const asset=await uploadOrderAsset(file,o.id,'tracking-art');
+      const {error}=await supabaseClient.rpc('add_order_tracking_event',{p_owner_secret:getOwnerToken(),p_tracking_token:o.trackingToken,p_kind:'art',p_message:msg||'Nova versão da arte disponível para aprovação.',p_image_url:asset.url});
+      if(error)throw error;
+      const old=o.status;o.status='Esperando aprovação';
+      if(old!==o.status)addHistory(o,'Nova arte enviada ao cliente para aprovação');
+      persist();await syncOrderTracking(o);hideUploadProgress(true);closeModal();render();notify('Arte enviada para aprovação',`${o.project} • ${o.client}`,'info','pedidos',o.id);toast('A atualização já está disponível para o cliente.');
+    }catch(err){hideUploadProgress(false);toast(err?.message||'Não foi possível enviar a atualização.','error');btn.disabled=false;btn.textContent='Enviar para o cliente';}
+  };
+}
+function renderDesignerTrackingEvents(o){
+  const events=Array.isArray(o.trackingEvents)?o.trackingEvents:[];
+  if(!events.length)return '<div class="empty-mini center"><span>✦</span><div><b>Nenhuma interação ainda.</b><small>Envie uma arte para aprovação ou aguarde o cliente solicitar alterações.</small></div></div>';
+  return events.slice(0,12).map(ev=>`<div class="designer-track-event ${esc(ev.kind||'update')}"><span>${ev.kind==='approval'?'✓':ev.kind==='alteration'?'↻':'✦'}</span><div><b>${esc(ev.kind==='approval'?'Arte aprovada':ev.kind==='alteration'?'Alteração do cliente':ev.kind==='art'?'Arte enviada':'Atualização')}</b><p>${esc(ev.message||'')}</p><small>${new Date(ev.created_at).toLocaleString('pt-BR')}</small>${ev.image_url?`<a href="${esc(ev.image_url)}" target="_blank" rel="noopener">Abrir imagem ↗</a>`:''}</div></div>`).join('');
+}
+async function syncTrackingEventsForOwner(){
+  if(!supabaseClient||!currentUser)return;
+  try{
+    const {data,error}=await supabaseClient.rpc('get_order_tracking_events_for_owner',{p_owner_secret:getOwnerToken()});
+    if(error)throw error;
+    let changed=false;
+    for(const o of orders){
+      const evs=(data||[]).filter(ev=>String(ev.order_id)===String(o.id)||String(ev.tracking_token)===String(o.trackingToken));
+      if(!evs.length)continue;
+      const known=new Set((o.trackingEvents||[]).map(x=>String(x.id)));
+      for(const ev of evs){
+        if(known.has(String(ev.id)))continue;
+        o.trackingEvents=o.trackingEvents||[];o.trackingEvents.unshift(ev);changed=true;
+        if(ev.author==='client'&&ev.kind==='alteration'){
+          const old=o.status;o.status='Alteração';if(old!==o.status)addHistory(o,'Cliente solicitou alteração pelo acompanhamento');
+          notify('Alteração solicitada',`${o.project} • ${o.client}`,'warning','pedidos',o.id);
+        }else if(ev.author==='client'&&ev.kind==='approval'){
+          const old=o.status;o.status='Entregue';if(old!==o.status)addHistory(o,'Cliente aprovou a arte pelo acompanhamento');
+          notify('Arte aprovada',`${o.project} • ${o.client}`,'success','pedidos',o.id);
+        }
+      }
+    }
+    if(changed){persist();render();for(const o of orders.filter(x=>x.trackingToken))syncOrderTracking(o);}
+  }catch(e){console.warn('[RafahStudio] Interações do cliente:',e);}
+}
+
 function onlineBriefingFingerprint(b){
   return [String(b.client_name||'').trim().toLowerCase(),String(b.project_name||'').trim().toLowerCase(),String(b.created_at||'').slice(0,10)].join('|');
 }
@@ -334,7 +428,7 @@ function normalizeStatus(s){
   if(s==='Finalizado'||s==='Finalizada') return 'Finalizado';
   return STATUS.includes(s)?s:'Novo';
 }
-function normalizeOrder(o){ return {id:o.id||uid('ord'),remoteId:o.remoteId||'',remoteCreated:o.remoteCreated||'',client:o.client||'',project:o.project||'Sem projeto',deadline:o.deadline||'',value:Number(o.value)||0,type:o.type||'Outro',status:normalizeStatus(o.status),created:o.created||todayISO(),paid:Boolean(o.paid||o.status==='Pago'||o.status==='Finalizado'),origin:o.origin||'Manual',priority:o.priority||'Normal',briefing:o.briefing||{},files:Array.isArray(o.files)?o.files:[],people:Array.isArray(o.people)?o.people:[],readyArt:o.readyArt||null,trackingToken:o.trackingToken||'',history:Array.isArray(o.history)?o.history:[]}; }
+function normalizeOrder(o){ return {id:o.id||uid('ord'),remoteId:o.remoteId||'',remoteCreated:o.remoteCreated||'',client:o.client||'',project:o.project||'Sem projeto',deadline:o.deadline||'',value:Number(o.value)||0,type:o.type||'Outro',status:normalizeStatus(o.status),created:o.created||todayISO(),paid:Boolean(o.paid||o.status==='Pago'||o.status==='Finalizado'),origin:o.origin||'Manual',priority:o.priority||'Normal',briefing:o.briefing||{},files:Array.isArray(o.files)?o.files:[],people:Array.isArray(o.people)?o.people:[],readyArt:o.readyArt||null,trackingToken:o.trackingToken||'',trackingEvents:Array.isArray(o.trackingEvents)?o.trackingEvents:[],history:Array.isArray(o.history)?o.history:[]}; }
 migrateLegacy();
 
 function scopedKey(base){ return `${base}:${currentUser?.id||currentUser?.user||currentUser?.email||'guest'}`; }
@@ -358,12 +452,82 @@ function loadScoped(){
   designer={...DEFAULT_DESIGNER,...(read(sk('rafahstudio:designer'),{})||{})};
 }
 
+let workspaceRemoteReady=false, workspaceSaveTimer=null, workspaceLastRemoteAt='';
+function workspaceSnapshot(){return {version:3,ownerToken:getOwnerToken(),publicToken:getPublicToken(),orders,clients,quotes,catalog,notifications,trash,deletedRemoteIds,deletedRemoteFingerprints};}
+function workspaceHasData(state){return !!(state&&([state.orders,state.clients,state.quotes,state.catalog].some(x=>Array.isArray(x)&&x.length)));}
+function applyWorkspaceState(state){
+  if(!state||typeof state!=='object')return;
+  if(state.ownerToken)localStorage.setItem(ownerTokenKey(accountScopeId()),String(state.ownerToken));
+  if(state.publicToken)localStorage.setItem(publicTokenKey(accountScopeId()),String(state.publicToken));
+  if(Array.isArray(state.orders))orders=state.orders.map(normalizeOrder);
+  if(Array.isArray(state.clients))clients=state.clients;
+  if(Array.isArray(state.quotes))quotes=state.quotes;
+  if(Array.isArray(state.catalog))catalog=state.catalog;
+  if(Array.isArray(state.notifications))notifications=state.notifications;
+  if(Array.isArray(state.trash))trash=state.trash;
+  if(Array.isArray(state.deletedRemoteIds))deletedRemoteIds=state.deletedRemoteIds;
+  if(Array.isArray(state.deletedRemoteFingerprints))deletedRemoteFingerprints=state.deletedRemoteFingerprints;
+}
+async function saveWorkspaceRemote(){
+  if(!workspaceRemoteReady||!supabaseClient||!currentUser?.id)return false;
+  try{
+    const {data,error}=await supabaseClient.from('rafah_workspace_state').upsert({
+      user_id:currentUser.id,state:workspaceSnapshot(),updated_at:new Date().toISOString()
+    },{onConflict:'user_id'}).select('updated_at').single();
+    if(error)throw error;
+    workspaceLastRemoteAt=data?.updated_at||workspaceLastRemoteAt;
+    return true;
+  }catch(e){console.warn('[RafahStudio] Sincronização do workspace:',e);return false;}
+}
+function scheduleWorkspaceSave(){
+  if(!workspaceRemoteReady)return;
+  clearTimeout(workspaceSaveTimer);
+  workspaceSaveTimer=setTimeout(saveWorkspaceRemote,700);
+}
+async function loadRemoteWorkspace(){
+  if(!supabaseClient||!currentUser?.id)return false;
+  try{
+    const {data,error}=await supabaseClient.from('rafah_workspace_state').select('state,updated_at').eq('user_id',currentUser.id).maybeSingle();
+    if(error)throw error;
+    if(data?.state){
+      const localState=workspaceSnapshot();
+      if(!workspaceHasData(data.state)&&workspaceHasData(localState)){
+        workspaceRemoteReady=true;
+        await saveWorkspaceRemote();
+        workspaceRemoteReady=false;
+        return false;
+      }
+      applyWorkspaceState(data.state);
+      workspaceLastRemoteAt=data.updated_at||'';
+      return true;
+    }
+    workspaceRemoteReady=true;
+    await saveWorkspaceRemote();
+    workspaceRemoteReady=false;
+    return false;
+  }catch(e){console.warn('[RafahStudio] Não foi possível carregar o workspace online:',e);return false;}
+}
+async function refreshWorkspaceFromRemote(){
+  if(!workspaceRemoteReady||!supabaseClient||!currentUser?.id)return;
+  try{
+    const {data,error}=await supabaseClient.from('rafah_workspace_state').select('state,updated_at').eq('user_id',currentUser.id).maybeSingle();
+    if(error||!data?.state)return;
+    if(data.updated_at&&data.updated_at!==workspaceLastRemoteAt){
+      applyWorkspaceState(data.state);
+      workspaceLastRemoteAt=data.updated_at;
+      const key=String(currentUser.id||currentUser.user||currentUser.email||'guest'),sk=base=>`${base}:${key}`;
+      write(sk('rafahstudio:orders'),orders);write(sk('rafahstudio:clients'),clients);write(sk('rafahstudio:quotes'),quotes);write(sk('rafahstudio:catalog'),catalog);write(sk('rafahstudio:notifications'),notifications);write(sk('rafahstudio:trash'),trash);
+      render();
+    }
+  }catch(e){console.warn('[RafahStudio] Atualização entre dispositivos:',e);}
+}
 function persist(){
   if(!currentUser) return;
   const key=String(currentUser.id||currentUser.user||currentUser.email||'guest');
   const sk=base=>`${base}:${key}`;
   write(sk('rafahstudio:orders'),orders); write(sk('rafahstudio:clients'),clients); write(sk('rafahstudio:quotes'),quotes); write(sk('rafahstudio:catalog'),catalog); write(sk('rafahstudio:notifications'),notifications); write(sk('rafahstudio:designer'),designer); write(sk('rafahstudio:trash'),trash); write(sk('rafahstudio:deletedRemote'),deletedRemoteIds); write(sk('rafahstudio:deletedRemoteFingerprints'),deletedRemoteFingerprints);
   write(KEYS.user,currentUser);
+  scheduleWorkspaceSave();
 }
 
 function toast(message,type='success'){ const el=document.createElement('div'); el.className=`toast ${type}`; el.innerHTML=`<span>${type==='error'?'!':type==='info'?'i':'✓'}</span><div>${esc(message)}</div>`; $('#toastRoot').appendChild(el); setTimeout(()=>el.classList.add('show'),20); setTimeout(()=>{el.classList.remove('show');setTimeout(()=>el.remove(),250)},3200); }
@@ -421,16 +585,21 @@ function requestDesktopNotifications(){
   if(!('Notification' in window))return;
   if(Notification.permission==='default')Notification.requestPermission().catch(()=>{});
 }
-function showDesktopNotification(title,body){
+async function showDesktopNotification(title,body,tag='rafahstudio'){
   if(!('Notification' in window)||Notification.permission!=='granted')return;
   try{
-    const n=new Notification(title,{body,icon:'assets/logo2.svg',tag:'rafahstudio-briefing'});
+    if('serviceWorker' in navigator){
+      const reg=await navigator.serviceWorker.ready;
+      await reg.showNotification(title,{body,icon:'assets/logo2.svg',badge:'assets/logo2.svg',tag,renotify:true,data:{url:location.href.split('#')[0]}});
+      return;
+    }
+    const n=new Notification(title,{body,icon:'assets/logo2.svg',tag});
     n.onclick=()=>{window.focus();n.close();go('pedidos');};
-  }catch(e){}
+  }catch(e){console.warn('Notificação do sistema:',e);}
 }
 function speakNotification(text){const mode=getNotificationPrefs().mode;if((mode!=='voice'&&mode!=='sound_voice')||!('speechSynthesis'in window))return;try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.lang='pt-BR';u.rate=.96;u.pitch=1;u.volume=.85;speechSynthesis.speak(u);}catch(e){}}
 function showNotificationPopup(title,body){document.querySelectorAll('.rs-notification-popup').forEach(x=>x.remove());const el=document.createElement('div');el.className='rs-notification-popup';el.innerHTML='<div class="rs-popup-icon">✓</div><div class="rs-popup-body"><b></b><span></span></div><button type="button" aria-label="Fechar">×</button>';el.querySelector('b').textContent=title;el.querySelector('span').textContent=body;el.querySelector('button').onclick=()=>el.remove();document.body.appendChild(el);setTimeout(()=>{if(el.isConnected){el.classList.add('out');setTimeout(()=>el.remove(),260)}},6500);}
-function notify(title,body,kind='info',linkPage='pedidos',linkId=null){notifications.unshift({id:uid('ntf'),title,body,kind,created:new Date().toISOString(),read:false,linkPage,linkId});notifications=notifications.slice(0,80);persist();renderNotifications();showNotificationPopup(title,body);playNotificationSound();speakNotification(`${title}. ${body}`);if(title==='Novo briefing recebido')showDesktopNotification(title,body);}
+function notify(title,body,kind='info',linkPage='pedidos',linkId=null){notifications.unshift({id:uid('ntf'),title,body,kind,created:new Date().toISOString(),read:false,linkPage,linkId});notifications=notifications.slice(0,80);persist();renderNotifications();showNotificationPopup(title,body);playNotificationSound();speakNotification(`${title}. ${body}`);if(['Novo briefing recebido','Alteração solicitada','Arte aprovada'].some(x=>title.includes(x)))showDesktopNotification(title,body,'rafahstudio-'+kind);}
 function formatRelative(iso){const diff=Math.max(0,Date.now()-new Date(iso).getTime());const min=Math.floor(diff/60000);if(min<1)return'agora';if(min<60)return`há ${min} min`;const h=Math.floor(min/60);if(h<24)return`há ${h} h`;const d=Math.floor(h/24);return`há ${d} d`;}
 function statusClass(s){return ({'Novo':'status-new','Em andamento':'status-doing','Esperando aprovação':'status-wait','Alteração':'status-change','Entregue':'status-done','Pago':'status-paid','Finalizado':'status-finalized'})[s]||'';}
 function priorityClass(p){return ({Alta:'priority-high',Urgente:'priority-urgent'})[p]||'';}
@@ -556,7 +725,7 @@ async function login(email,pass){
     const {data,error}=await supabaseClient.auth.signInWithPassword({email:email.trim().toLowerCase(),password:pass});
     if(error) throw error;
     await establishAuthenticatedUser(data.user);
-      showApp();toast('Bem-vindo de volta.');
+      showApp();startLiveSync();toast('Bem-vindo de volta.');
   }catch(err){console.error(err);toast(err?.message||'E-mail ou senha inválidos.','error');}
 }
 async function register(){
@@ -571,7 +740,7 @@ async function register(){
     if(!data.user) throw new Error('Não foi possível criar a conta.');
     if(!data.session){toast('Conta criada. Confirme o e-mail para liberar o primeiro acesso.','info');showAuth('login');return;}
     await establishAuthenticatedUser(data.user,{name,username:user,whatsapp:whats,area});
-    showApp();toast('Conta criada com sucesso.');
+    showApp();startLiveSync();toast('Conta criada com sucesso.');
   }catch(err){console.error(err);toast(err?.message||'Não foi possível criar a conta.','error');}
 }
 async function establishAuthenticatedUser(user,override={}){
@@ -587,6 +756,9 @@ async function establishAuthenticatedUser(user,override={}){
     designer={...DEFAULT_DESIGNER,name:currentUser.name,whats:currentUser.whats,area:currentUser.area,email:currentUser.email};
     await saveRemoteProfile();
   }
+  workspaceRemoteReady=false;
+  await loadRemoteWorkspace();
+  workspaceRemoteReady=true;
   persist();
 }
 async function logout(){
@@ -710,7 +882,7 @@ async function saveOrder(existing,peopleDraft=[],readyArtDraft=null){
 }
 function addHistory(o,text){o.history=o.history||[];o.history.unshift({id:uid('hist'),at:new Date().toISOString(),text});}
 function openOrderView(id){const o=orders.find(x=>x.id===id);if(!o)return; const b=o.briefing||{}; modal(`<div class="modal-head"><div><span class="eyebrow">DETALHES DO PEDIDO</span><h2>${esc(o.project)}</h2><p class="muted">${esc(o.client)} • ${esc(o.type)}</p></div><button class="close-modal" data-close-modal>×</button></div><div class="detail-top"><span class="status-pill ${statusClass(o.status)}">${esc(o.status)}</span><div class="detail-actions"><button class="btn secondary" data-share-tracking="${o.id}">↗ Acompanhar pedido</button><button class="btn secondary" data-edit-order="${o.id}">Editar pedido</button><button class="btn secondary" data-edit-order-client="${o.id}">Editar cliente</button><button class="btn secondary" data-order-pdf="${o.id}">PDF</button>${(o.paid||o.status==='Pago'||o.status==='Finalizado')?`<button class="btn secondary" data-add-catalog-order="${o.id}">▧ Catálogo</button>`:''}<button class="btn primary" data-cycle-status="${o.id}">Avançar status</button></div></div><div class="status-flow">${STATUS.map((s,i)=>`<span class="flow-step ${STATUS.indexOf(o.status)>=i?'done':''}"><i>${STATUS.indexOf(o.status)>=i?'✓':i+1}</i>${s}</span>`).join('')}</div><div class="detail-deadline-banner">${deadlineTag(o.deadline)}<span>Prazo: <b>${dateLabel(o.deadline)}</b></span></div><div class="detail-grid"><div class="detail-card"><b>Resumo</b><dl><div><dt>Cliente</dt><dd>${esc(o.client)}</dd></div><div><dt>Prazo</dt><dd>${dateLabel(o.deadline)}</dd></div><div><dt>Valor</dt><dd>${money(o.value)}</dd></div><div><dt>Pagamento</dt><dd>${o.paid||o.status==='Pago'?'Pago':'Pendente'}</dd></div></dl></div><div class="detail-card"><b>Briefing</b><p class="detail-text">${esc(b.texts||b.notes||'Nenhuma informação adicional registrada.')}</p>${b.refs?`<div class="ref-box"><b>Referências</b><p>${esc(b.refs)}</p></div>`:''}</div></div><div class="detail-card full-detail"><div class="detail-card-head"><b>Arquivos enviados pelo cliente</b><small>${(o.files||[]).length} arquivo(s)</small></div><div id="orderFiles" class="file-gallery">${renderFileGallery(o)}</div></div><div class="detail-card full-detail"><div class="detail-card-head"><b>Pessoas e fotos para a arte</b><small>${(Array.isArray(b.people)?b.people.length:0)+(Array.isArray(o.people)?o.people.length:0)} pessoa(s)</small></div><div class="file-gallery">${renderPeopleGallery(o)}</div></div>
-<div class="detail-card full-detail"><div class="detail-card-head"><b>Arte pronta / final</b><small>${o.readyArt?.name?'Arquivo anexado':'Ainda não anexada'}</small></div>${o.readyArt?.url||o.readyArt?.dataUrl?`<div class="ready-art-detail"><img src="${esc(o.readyArt.url||o.readyArt.dataUrl)}" alt="Arte final"><a class="btn secondary small" href="${esc(o.readyArt.url||o.readyArt.dataUrl)}" target="_blank" rel="noopener">Abrir arte original</a></div>`:`<div class="empty-mini center"><span>▧</span><div><b>Nenhuma arte pronta.</b><small>Edite o pedido para adicionar a arte final.</small></div></div>`}</div><div class="detail-card full-detail"><div class="detail-card-head"><b>Histórico</b><small>Atividades do pedido</small></div><div class="history">${(o.history||[]).map(h=>`<div><span></span><p><b>${esc(h.text)}</b><small>${new Date(h.at).toLocaleString('pt-BR')}</small></p></div>`).join('')||'<p class="muted">Sem histórico.</p>'}</div></div><div class="modal-actions"><button class="btn danger-btn" data-delete-order="${o.id}">Excluir pedido</button><button class="btn secondary" data-toggle-paid="${o.id}">${o.paid?'Marcar como pendente':'Marcar como pago'}</button></div>`); }
+<div class="detail-card full-detail"><div class="detail-card-head"><b>Arte pronta / final</b><small>${o.readyArt?.name?'Arquivo anexado':'Ainda não anexada'}</small></div>${o.readyArt?.url||o.readyArt?.dataUrl?`<div class="ready-art-detail"><img src="${esc(o.readyArt.url||o.readyArt.dataUrl)}" alt="Arte final"><a class="btn secondary small" href="${esc(o.readyArt.url||o.readyArt.dataUrl)}" target="_blank" rel="noopener">Abrir arte original</a></div>`:`<div class="empty-mini center"><span>▧</span><div><b>Nenhuma arte pronta.</b><small>Edite o pedido para adicionar a arte final.</small></div></div>`}</div><div class="detail-card full-detail client-tracking-admin"><div class="detail-card-head"><div><b>Acompanhamento do cliente</b><small>Envie versões da arte e receba aprovações ou pedidos de alteração.</small></div><button class="btn primary small" data-send-tracking-art="${o.id}">+ Enviar arte para aprovação</button></div><div class="designer-track-events">${renderDesignerTrackingEvents(o)}</div></div><div class="detail-card full-detail"><div class="detail-card-head"><b>Histórico</b><small>Atividades do pedido</small></div><div class="history">${(o.history||[]).map(h=>`<div><span></span><p><b>${esc(h.text)}</b><small>${new Date(h.at).toLocaleString('pt-BR')}</small></p></div>`).join('')||'<p class="muted">Sem histórico.</p>'}</div></div><div class="modal-actions"><button class="btn danger-btn" data-delete-order="${o.id}">Excluir pedido</button><button class="btn secondary" data-toggle-paid="${o.id}">${o.paid?'Marcar como pendente':'Marcar como pago'}</button></div>`); }
 function renderFileGallery(o){
   if(!o.files?.length)return`<div class="empty-mini center"><span>↑</span><div><b>Nenhum arquivo anexado.</b><small>Arquivos enviados pelo cliente aparecerão aqui.</small></div></div>`;
   return o.files.map((f,i)=>{
@@ -740,7 +912,7 @@ function moveStatus(id,direction){
   if(next==='Pago'||next==='Finalizado')o.paid=true;
   if(old==='Pago'&&next!=='Pago'&&next!=='Finalizado')o.paid=false;
   addHistory(o,`Pedido movido de ${old} para ${next}`);
-  persist(); render();
+  persist(); render(); syncOrderTracking(o);
   notify(`Pedido movido para ${next}`,`${o.project} • ${o.client}`,'info','pedidos',o.id);
 }
 
@@ -945,11 +1117,22 @@ async function loadPublicTracking(){
       {k:'portfolio',label:'Portfólio',v:profile.portfolio}
     ].filter(x=>x.v).map(x=>`<a href="${esc(socialUrl(x.k,x.v))}" target="_blank" rel="noopener">${socialIcon(x.k)}<span>${esc(x.label)}</span></a>`).join('');
     $('#trackingSocials').innerHTML=socials;
+    const events=await fetchTrackingEvents(token);
+    $('#trackingFeed').innerHTML=renderTrackingEventCards(events);
+    const hasArt=events.some(x=>x.kind==='art'&&x.image_url);
+    $('#trackingApproveBtn').disabled=!hasArt||['Entregue','Pago','Finalizado'].includes(status);
+    $('#trackingChangeBtn').disabled=['Pago','Finalizado'].includes(status);
     content?.classList.remove('hidden');
   }catch(e){console.warn('Acompanhamento público:',e);errorBox?.classList.remove('hidden');$('#trackingErrorText').textContent=e?.message||'Não foi possível carregar este pedido.';}
   finally{loading?.classList.add('hidden');}
 }
-function setupTracking(){loadPublicTracking();setInterval(()=>{if(location.hash.startsWith('#pedido='))loadPublicTracking();},15000);}
+function setupTracking(){
+  loadPublicTracking();
+  $('#trackingChangeBtn')?.addEventListener('click',submitPublicAlteration);
+  $('#trackingApproveBtn')?.addEventListener('click',submitPublicApproval);
+  $('#trackingFeed')?.addEventListener('click',e=>{const b=e.target.closest('[data-public-art]');if(b)modal(`<div class="image-modal"><button class="close-modal" data-close-modal>×</button><img src="${esc(b.dataset.publicArt)}" alt="Pré-visualização da arte"></div>`);});
+  setInterval(()=>{if(location.hash.startsWith('#pedido='))loadPublicTracking();},12000);
+}
 function setupPublic(){
   let people=[];let publicCatalog=[];let selectedCatalog=[];
   $('#publicCatalogToggle')?.addEventListener('click',()=>{const d=$('#publicCatalogDrawer');if(!d)return;d.classList.toggle('hidden');const b=$('#publicCatalogToggle');b.classList.toggle('open',!d.classList.contains('hidden'));});
@@ -1039,7 +1222,7 @@ function setupEvents(){
  document.addEventListener('pointerdown',()=>{unlockNotificationAudio();},{once:true});
  $('#loginForm').onsubmit=e=>{e.preventDefault();login($('#loginUser').value.trim(),$('#loginPass').value);};$('#registerForm').onsubmit=e=>{e.preventDefault();register();};$('#showRegisterBtn').onclick=()=>showAuth('register');$('#showLoginBtn').onclick=()=>showAuth('login');
  $$('.nav-item[data-page]').forEach(b=>b.addEventListener('click',()=>go(b.dataset.page))); $('#logoutBtn').onclick=logout;$('#profileQuick').onclick=()=>go('perfil');$('#mobileMenu').onclick=()=>$('#sidebar').classList.toggle('mobile-open');
- $('#notificationBtn').onclick=e=>{e.stopPropagation();$('#notificationPanel').classList.toggle('open');};document.addEventListener('click',e=>{if(!e.target.closest('#notificationPanel')&&!e.target.closest('#notificationBtn'))$('#notificationPanel').classList.remove('open');});$('#markReadBtn').onclick=()=>{notifications=notifications.map(n=>({...n,read:true}));persist();renderNotifications();toast('Notificações marcadas como lidas.','info');};
+ $('#notificationBtn').onclick=e=>{e.stopPropagation();requestDesktopNotifications();$('#notificationPanel').classList.toggle('open');};document.addEventListener('click',e=>{if(!e.target.closest('#notificationPanel')&&!e.target.closest('#notificationBtn'))$('#notificationPanel').classList.remove('open');});$('#markReadBtn').onclick=()=>{notifications=notifications.map(n=>({...n,read:true}));persist();renderNotifications();toast('Notificações marcadas como lidas.','info');};
  $('#deleteAllNotificationsBtn').onclick=()=>{notifications=[];persist();renderNotifications();};
  $('#deleteReadBtn').onclick=()=>{notifications=notifications.filter(n=>!n.read);persist();renderNotifications();};
  $('#notificationsList').addEventListener('click',e=>{const d=e.target.closest('[data-delete-notification]');if(d){e.preventDefault();e.stopPropagation();notifications=notifications.filter(n=>n.id!==d.dataset.deleteNotification);persist();renderNotifications();return;}const o=e.target.closest('[data-open-notification]');if(o){const n=notifications.find(x=>x.id===o.dataset.openNotification);if(n){n.read=true;persist();renderNotifications();if(n.linkPage)go(n.linkPage);}}});
@@ -1068,6 +1251,7 @@ function handleDelegated(e){const a=e.target.closest('[data-action]');if(a){cons
  const pdf=e.target.closest('[data-order-pdf]');if(pdf)generateOrderPDF(pdf.dataset.orderPdf);
  const paid=e.target.closest('[data-toggle-paid]');if(paid){togglePaid(paid.dataset.togglePaid);if($('#modalRoot').innerHTML)openOrderView(paid.dataset.togglePaid);}
  const share=e.target.closest('[data-share-tracking]');if(share){shareOrderTracking(share.dataset.shareTracking);return;}
+ const sendArt=e.target.closest('[data-send-tracking-art]');if(sendArt){sendTrackingArtUpdate(sendArt.dataset.sendTrackingArt);return;}
  const move=e.target.closest('[data-move-status]');if(move&&!move.disabled){moveStatus(move.dataset.moveStatus,Number(move.dataset.direction)||1);}
  const cyc=e.target.closest('[data-cycle-status]');if(cyc)cycleStatus(cyc.dataset.cycleStatus);
  const delC=e.target.closest('[data-delete-client]');if(delC){deleteClient(delC.dataset.deleteClient);return;}
@@ -1089,8 +1273,20 @@ function handleDelegated(e){const a=e.target.closest('[data-action]');if(a){cons
 }
 
 
+let liveSyncStarted=false;
+function startLiveSync(){
+  if(liveSyncStarted)return;liveSyncStarted=true;
+  setTimeout(()=>{syncOnlineBriefings();refreshCatalogFromSupabase();syncTrackingEventsForOwner();refreshWorkspaceFromRemote();},400);
+  setInterval(syncOnlineBriefings,30000);
+  setInterval(syncTrackingEventsForOwner,12000);
+  setInterval(refreshWorkspaceFromRemote,18000);
+}
+async function registerServiceWorker(){
+  if(!('serviceWorker' in navigator)||location.protocol==='file:')return;
+  try{await navigator.serviceWorker.register('./sw.js');}catch(e){console.warn('Service Worker:',e);}
+}
 async function init(){
-  setupEvents();setupPublic();setupTracking();document.body.classList.add('dark');
+  setupEvents();setupPublic();setupTracking();registerServiceWorker();document.body.classList.add('dark');
   if(handlePublicHash())return;
   if(!supabaseClient){initSupabaseClient();}
   try{
@@ -1098,8 +1294,7 @@ async function init(){
     if(data?.session?.user){
       await establishAuthenticatedUser(data.session.user);
       showApp();
-      setTimeout(()=>{syncOnlineBriefings();refreshCatalogFromSupabase();},400);
-      setInterval(syncOnlineBriefings,30000);
+      startLiveSync();
       return;
     }
   }catch(e){console.warn('[RafahStudio] Sessão:',e);}
