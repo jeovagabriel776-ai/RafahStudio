@@ -723,3 +723,69 @@ body{background:
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation-duration:.001ms !important;animation-iteration-count:1 !important;transition-duration:.001ms !important;scroll-behavior:auto !important;}
 }
+
+
+/* CORREÇÃO 1.2 — rolagem independente das etapas de pedidos
+   Cada coluna mantém sua própria área de rolagem, inclusive no celular. */
+.orders-board-wrap{
+  overflow:hidden!important;
+  min-height:0!important;
+}
+.orders-board{
+  min-height:0;
+  height:100%;
+  overflow-x:auto!important;
+  overflow-y:hidden!important;
+  touch-action:pan-x;
+}
+.order-stage{
+  min-height:0!important;
+  height:100%;
+  overflow:hidden!important;
+}
+.order-stage-body{
+  flex:1 1 auto!important;
+  min-height:0!important;
+  height:0!important;
+  max-height:none!important;
+  overflow-y:auto!important;
+  overflow-x:hidden!important;
+  -webkit-overflow-scrolling:touch;
+  overscroll-behavior-y:contain;
+  touch-action:pan-y;
+  contain:none!important;
+  scrollbar-width:thin;
+}
+.order-stage-body img{
+  max-width:100%;
+  height:auto;
+}
+@media(max-width:850px){
+  .orders-board-wrap{
+    height:calc(100dvh - 250px)!important;
+    min-height:430px!important;
+  }
+  .order-stage{
+    flex-basis:86vw!important;
+  }
+  .order-stage-body{
+    height:0!important;
+    min-height:0!important;
+    max-height:none!important;
+    overflow-y:auto!important;
+  }
+}
+@media(max-width:600px){
+  .orders-board-wrap{
+    height:calc(100dvh - 220px)!important;
+    min-height:430px!important;
+  }
+  .order-stage-body{
+    padding:10px!important;
+    -webkit-overflow-scrolling:touch;
+    touch-action:pan-y;
+  }
+}
+
+/* Ícone do PWA: mantém a aparência da primeira versão, sem forçar
+   a arte a ocupar uma área grande de máscara do Android. */

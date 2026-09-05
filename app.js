@@ -394,7 +394,7 @@ async function syncOnlineBriefings(){
       return true;
     });
 
-    if(changed){persist();renderSoon();}
+    if(changed){persist();if(!document.hidden)renderSoon();}
   }catch(err){
     console.error('RafahStudio Supabase:',err);
   }finally{
@@ -598,13 +598,16 @@ function requestDesktopNotifications(){
 }
 async function showDesktopNotification(title,body,tag='rafahstudio'){
   if(!('Notification' in window)||Notification.permission!=='granted')return;
+  const options={body,icon:'assets/logo2.svg',badge:'assets/logo2.svg',tag,renotify:true,data:{url:location.href.split('#')[0]}};
   try{
     if('serviceWorker' in navigator){
-      const reg=await navigator.serviceWorker.ready;
-      await reg.showNotification(title,{body,icon:'assets/icon-192.png',badge:'assets/icon-192.png',tag,renotify:true,data:{url:location.href.split('#')[0]}});
-      return;
+      const reg=await navigator.serviceWorker.getRegistration();
+      if(reg && typeof reg.showNotification==='function'){
+        await reg.showNotification(title,options);
+        return;
+      }
     }
-    const n=new Notification(title,{body,icon:'assets/icon-192.png',tag});
+    const n=new Notification(title,options);
     n.onclick=()=>{window.focus();n.close();go('pedidos');};
   }catch(e){console.warn('Notificação do sistema:',e);}
 }
@@ -1323,7 +1326,10 @@ function handleDelegated(e){const a=e.target.closest('[data-action]');if(a){cons
 
 let liveSyncStarted=false;
 async function runLiveSyncCycle(kind){
-  if(document.hidden||!navigator.onLine)return;
+  if(!navigator.onLine)return;
+  // Briefings continuam sendo consultados em segundo plano para que a
+  // notificação do sistema possa aparecer mesmo com o painel minimizado.
+  if(document.hidden && kind!=='briefings')return;
   try{
     if(kind==='briefings')await syncOnlineBriefings();
     else if(kind==='tracking')await syncTrackingEventsForOwner();
@@ -1344,9 +1350,11 @@ function startLiveSync(){
     if(document.hidden||!navigator.onLine)return;
     runLiveSyncCycle('briefings');runLiveSyncCycle('tracking');runLiveSyncCycle('workspace');
   },400);
-  scheduleLiveSync('briefings',45000);
-  scheduleLiveSync('tracking',20000);
-  scheduleLiveSync('workspace',30000);
+  // Briefings têm prioridade: uma consulta leve em segundo plano mantém
+  // a chegada de novos pedidos perceptível sem voltar a pesar o restante do app.
+  scheduleLiveSync('briefings',15000);
+  scheduleLiveSync('tracking',30000);
+  scheduleLiveSync('workspace',45000);
   document.addEventListener('visibilitychange',()=>{if(!document.hidden){runLiveSyncCycle('briefings');runLiveSyncCycle('tracking');runLiveSyncCycle('workspace');}}, {passive:true});
   window.addEventListener('online',()=>{runLiveSyncCycle('briefings');runLiveSyncCycle('tracking');runLiveSyncCycle('workspace');},{passive:true});
 }

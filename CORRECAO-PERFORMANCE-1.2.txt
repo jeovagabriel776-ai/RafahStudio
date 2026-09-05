@@ -1,0 +1,15 @@
+RAFAHSTUDIO — CORREÇÃO PERFORMANCE 1.2
+Data: 2026-09-04
+
+- Restaurada a consulta de novos briefings em segundo plano enquanto o painel fica minimizado.
+- Notificação do sistema voltou a usar o ícone SVG da primeira versão e não depende de esperar pelo Service Worker.
+- Se o Service Worker não estiver disponível/controlando a página, usa a notificação nativa do navegador como fallback.
+- Rolagem independente por coluna dos pedidos corrigida no PC e no celular.
+- A área interna de cada etapa agora possui altura flexível real, rolagem vertical por toque e suporte a rolagem contínua no iPhone/Android.
+- Removido contain: paint/style da área rolável das colunas, pois podia impedir/atrapalhar a rolagem em alguns navegadores.
+- Manifesto voltou ao ícone SVG da primeira versão para recuperar o tamanho visual anterior.
+- Cache do Service Worker recebeu nova versão.
+- Nenhuma função de pedidos, briefing, catálogo, acompanhamento ou clientes foi removida.
+
+Observação:
+Se o aplicativo estiver TOTALMENTE fechado, notificações automáticas em tempo real ainda dependem de Web Push/VAPID. Esta correção restaura as notificações quando o PWA/site permanece aberto, minimizado ou em segundo plano.
