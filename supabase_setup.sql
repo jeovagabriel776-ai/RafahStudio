@@ -244,10 +244,16 @@ create table if not exists public.rafah_profiles (
   bio text not null default '',
   photo text not null default '',
   banner text not null default '',
+  pix_type text not null default 'CPF',
+  pix_key text not null default '',
+  pix_name text not null default '',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
+alter table public.rafah_profiles add column if not exists pix_type text not null default 'CPF';
+alter table public.rafah_profiles add column if not exists pix_key text not null default '';
+alter table public.rafah_profiles add column if not exists pix_name text not null default '';
 alter table public.rafah_profiles enable row level security;
 
 drop policy if exists "rafah_profiles_select_own" on public.rafah_profiles;
@@ -354,12 +360,17 @@ create table if not exists public.briefing_public_profiles (
   updated_at timestamptz not null default now()
 );
 
+alter table public.briefing_public_profiles add column if not exists pix_type text not null default 'CPF';
+alter table public.briefing_public_profiles add column if not exists pix_key text not null default '';
+alter table public.briefing_public_profiles add column if not exists pix_name text not null default '';
+
 alter table public.briefing_public_profiles enable row level security;
 
 drop policy if exists "briefing_public_profiles_no_direct_select" on public.briefing_public_profiles;
 
 drop function if exists public.save_public_profile_link(text,text,text,text,text,text,text);
 drop function if exists public.save_public_profile_link(text,text,text,text,text,text,text,text);
+drop function if exists public.save_public_profile_link(text,text,text,text,text,text,text,text,text,text,text);
 
 create or replace function public.save_public_profile_link(
   p_public_token text,
@@ -369,7 +380,10 @@ create or replace function public.save_public_profile_link(
   p_instagram text,
   p_portfolio text,
   p_email text,
-  p_banner text
+  p_banner text,
+  p_pix_type text,
+  p_pix_key text,
+  p_pix_name text
 )
 returns void
 language plpgsql
@@ -380,11 +394,12 @@ declare v_owner_secret text;
 begin
   select owner_secret into v_owner_secret from public.briefing_links where public_token=p_public_token;
   if v_owner_secret is null or v_owner_secret <> p_owner_secret then raise exception 'Acesso ao link não autorizado'; end if;
-  insert into public.briefing_public_profiles(public_token,name,whatsapp,instagram,portfolio,email,banner)
-  values(p_public_token,coalesce(nullif(trim(p_name),''),'Designer'),coalesce(trim(p_whatsapp),''),coalesce(trim(p_instagram),''),coalesce(trim(p_portfolio),''),coalesce(trim(p_email),''),coalesce(trim(p_banner),''))
+  insert into public.briefing_public_profiles(public_token,name,whatsapp,instagram,portfolio,email,banner,pix_type,pix_key,pix_name)
+  values(p_public_token,coalesce(nullif(trim(p_name),''),'Designer'),coalesce(trim(p_whatsapp),''),coalesce(trim(p_instagram),''),coalesce(trim(p_portfolio),''),coalesce(trim(p_email),''),coalesce(trim(p_banner),''),coalesce(trim(p_pix_type),'CPF'),coalesce(trim(p_pix_key),''),coalesce(trim(p_pix_name),''))
   on conflict(public_token) do update set
     name=excluded.name,whatsapp=excluded.whatsapp,instagram=excluded.instagram,
-    portfolio=excluded.portfolio,email=excluded.email,banner=excluded.banner,updated_at=now();
+    portfolio=excluded.portfolio,email=excluded.email,banner=excluded.banner,
+    pix_type=excluded.pix_type,pix_key=excluded.pix_key,pix_name=excluded.pix_name,updated_at=now();
 end;
 $$;
 
@@ -399,7 +414,7 @@ as $$
   where p.public_token=p_public_token;
 $$;
 
-grant execute on function public.save_public_profile_link(text,text,text,text,text,text,text,text) to authenticated;
+grant execute on function public.save_public_profile_link(text,text,text,text,text,text,text,text,text,text,text) to authenticated;
 grant execute on function public.get_public_profile_for_token(text) to anon,authenticated;
 
 -- O estado Finalizado é usado depois do pagamento para indicar que o projeto
@@ -481,20 +496,24 @@ create table if not exists public.order_tracking_events (
   owner_secret text not null,
   order_id text not null,
   author text not null check (author in ('designer','client','system')),
-  kind text not null check (kind in ('art','alteration','approval','message','status')),
+  kind text not null check (kind in ('art','alteration','approval','message','status','payment')),
   message text not null default '',
   image_url text not null default '',
+  meta jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now()
 );
 create index if not exists order_tracking_events_token_idx on public.order_tracking_events(tracking_token,created_at desc);
 create index if not exists order_tracking_events_owner_idx on public.order_tracking_events(owner_secret,created_at desc);
+alter table public.order_tracking_events add column if not exists meta jsonb not null default '{}'::jsonb;
+alter table public.order_tracking_events drop constraint if exists order_tracking_events_kind_check;
+alter table public.order_tracking_events add constraint order_tracking_events_kind_check check (kind in ('art','alteration','approval','message','status','payment'));
 alter table public.order_tracking_events enable row level security;
 
 drop function if exists public.get_order_tracking_events(text);
 create or replace function public.get_order_tracking_events(p_tracking_token text)
-returns table(id bigint,tracking_token text,order_id text,author text,kind text,message text,image_url text,created_at timestamptz)
+returns table(id bigint,tracking_token text,order_id text,author text,kind text,message text,image_url text,meta jsonb,created_at timestamptz)
 language sql security definer set search_path=public as $$
-  select e.id,e.tracking_token,e.order_id,e.author,e.kind,e.message,e.image_url,e.created_at
+  select e.id,e.tracking_token,e.order_id,e.author,e.kind,e.message,e.image_url,e.meta,e.created_at
   from public.order_tracking_events e
   where e.tracking_token=p_tracking_token
   order by e.created_at desc
@@ -516,6 +535,21 @@ begin
   return v_id;
 end $$;
 
+drop function if exists public.submit_order_message(text,text);
+create or replace function public.submit_order_message(p_tracking_token text,p_message text)
+returns bigint language plpgsql security definer set search_path=public as $$
+declare t public.order_tracking%rowtype; v_id bigint;
+begin
+  select * into t from public.order_tracking where tracking_token=p_tracking_token limit 1;
+  if t.tracking_token is null then raise exception 'Pedido não encontrado.'; end if;
+  if length(trim(coalesce(p_message,'')))<1 then raise exception 'Digite uma mensagem.'; end if;
+  if t.status in ('Pago','Finalizado') then raise exception 'Este pedido já foi finalizado.'; end if;
+  insert into public.order_tracking_events(tracking_token,owner_secret,order_id,author,kind,message)
+  values(t.tracking_token,t.owner_secret,t.order_id,'client','message',trim(p_message)) returning id into v_id;
+  update public.order_tracking set updated_at=now() where tracking_token=p_tracking_token;
+  return v_id;
+end $$;
+
 drop function if exists public.submit_order_approval(text,text);
 create or replace function public.submit_order_approval(p_tracking_token text,p_message text)
 returns bigint language plpgsql security definer set search_path=public as $$
@@ -531,24 +565,25 @@ begin
 end $$;
 
 drop function if exists public.add_order_tracking_event(text,text,text,text,text);
-create or replace function public.add_order_tracking_event(p_owner_secret text,p_tracking_token text,p_kind text,p_message text,p_image_url text)
+drop function if exists public.add_order_tracking_event(text,text,text,text,text,jsonb);
+create or replace function public.add_order_tracking_event(p_owner_secret text,p_tracking_token text,p_kind text,p_message text,p_image_url text,p_meta jsonb default '{}'::jsonb)
 returns bigint language plpgsql security definer set search_path=public as $$
 declare t public.order_tracking%rowtype; v_id bigint;
 begin
   select * into t from public.order_tracking where tracking_token=p_tracking_token and owner_secret=p_owner_secret limit 1;
   if t.tracking_token is null then raise exception 'Pedido não encontrado ou sem permissão.'; end if;
-  if p_kind not in ('art','message','status') then raise exception 'Tipo de atualização inválido.'; end if;
-  insert into public.order_tracking_events(tracking_token,owner_secret,order_id,author,kind,message,image_url)
-  values(t.tracking_token,t.owner_secret,t.order_id,'designer',p_kind,coalesce(p_message,''),coalesce(p_image_url,'')) returning id into v_id;
+  if p_kind not in ('art','message','status','payment') then raise exception 'Tipo de atualização inválido.'; end if;
+  insert into public.order_tracking_events(tracking_token,owner_secret,order_id,author,kind,message,image_url,meta)
+  values(t.tracking_token,t.owner_secret,t.order_id,'designer',p_kind,coalesce(p_message,''),coalesce(p_image_url,''),coalesce(p_meta,'{}'::jsonb)) returning id into v_id;
   if p_kind='art' then update public.order_tracking set status='Esperando aprovação',updated_at=now() where tracking_token=p_tracking_token; end if;
   return v_id;
 end $$;
 
 drop function if exists public.get_order_tracking_events_for_owner(text);
 create or replace function public.get_order_tracking_events_for_owner(p_owner_secret text)
-returns table(id bigint,tracking_token text,order_id text,author text,kind text,message text,image_url text,created_at timestamptz)
+returns table(id bigint,tracking_token text,order_id text,author text,kind text,message text,image_url text,meta jsonb,created_at timestamptz)
 language sql security definer set search_path=public as $$
-  select e.id,e.tracking_token,e.order_id,e.author,e.kind,e.message,e.image_url,e.created_at
+  select e.id,e.tracking_token,e.order_id,e.author,e.kind,e.message,e.image_url,e.meta,e.created_at
   from public.order_tracking_events e
   where e.owner_secret=p_owner_secret
   order by e.created_at desc
@@ -558,7 +593,8 @@ $$;
 grant execute on function public.get_order_tracking_events(text) to anon,authenticated;
 grant execute on function public.submit_order_alteration(text,text) to anon,authenticated;
 grant execute on function public.submit_order_approval(text,text) to anon,authenticated;
-grant execute on function public.add_order_tracking_event(text,text,text,text,text) to authenticated;
+grant execute on function public.submit_order_message(text,text) to anon,authenticated;
+grant execute on function public.add_order_tracking_event(text,text,text,text,text,jsonb) to authenticated;
 grant execute on function public.get_order_tracking_events_for_owner(text) to authenticated;
 
 
