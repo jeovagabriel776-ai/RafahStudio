@@ -795,6 +795,31 @@ function filteredOrders(){
  if(q) list=list.filter(o=>`${o.project} ${o.client} ${o.type}`.toLowerCase().includes(q));
  const sort=$('#orderSort')?.value||'recent'; list.sort((a,b)=>sort==='deadline'?(a.deadline||'9999').localeCompare(b.deadline||'9999'):sort==='value'?b.value-a.value:sort==='oldest'?a.created.localeCompare(b.created):b.created.localeCompare(a.created)); return list;
 }
+function orderCardArtwork(o){
+  const ready=o?.readyArt;
+  if(ready?.url||ready?.dataUrl){
+    return {
+      url: ready.url||ready.dataUrl,
+      label:'Arte final',
+      alt: ready.name||'Arte final'
+    };
+  }
+  const files=Array.isArray(o?.files)?o.files:[];
+  const image=files.find(f=>{
+    if(!f)return false;
+    const type=String(f.type||'').toLowerCase();
+    const name=String(f.name||'').toLowerCase();
+    return type.startsWith('image/') || /\.(png|jpe?g|webp|gif|svg)$/i.test(name);
+  });
+  if(image?.url||image?.dataUrl){
+    return {
+      url:image.url||image.dataUrl,
+      label:'Arte / referência',
+      alt:image.name||'Arte do pedido'
+    };
+  }
+  return null;
+}
 function renderOrders(){
  const counts={all:orders.length,Novo:0,'Em andamento':0,'Esperando aprovação':0,'Alteração':0,Entregue:0,Pago:0,Finalizado:0};
  orders.forEach(o=>counts[o.status]=(counts[o.status]||0)+1);
@@ -814,7 +839,9 @@ function renderOrders(){
  const visibleStatuses=orderFilter==='all'?statuses:[orderFilter];
  const columns=visibleStatuses.map(status=>{
    const list=sortOrders(orders.filter(o=>o.status===status));
-   const cards=list.map(o=>`
+   const cards=list.map(o=>{
+     const artwork=orderCardArtwork(o);
+     return `
      <article class="order-card" draggable="true" data-order-card="${o.id}" data-drag-order="${o.id}" title="Segure e arraste para mover este pedido">
        <div class="order-card-head">
          <div class="project-cell">
@@ -831,14 +858,15 @@ function renderOrders(){
        <div class="order-card-tags">${deadlineTag(o.deadline)}${o.trackingToken?'<span class="tracking-mini">↗ Acompanhamento</span>':''}</div>
        ${o.priority!=='Normal'?`<small class="priority ${priorityClass(o.priority)}">${esc(o.priority)}</small>`:''}
        ${o.origin==='Briefing online'?`<span class="online-badge">Briefing online</span>`:''}
-       ${(o.readyArt?.url||o.readyArt?.dataUrl)?`<div class="order-card-art"><img src="${esc(o.readyArt.url||o.readyArt.dataUrl)}" alt="Arte pronta"><span>Arte pronta</span></div>`:''}
+       ${artwork?`<div class="order-card-art order-card-art-featured"><img loading="eager" decoding="async" src="${esc(artwork.url)}" alt="${esc(artwork.alt)}"><span>${esc(artwork.label)}</span></div>`:''}
        ${Array.isArray(o.people)&&o.people.length?`<div class="order-card-people">👤 ${o.people.length} pessoa(s)</div>`:''}
        <div class="order-card-actions">
          <button class="icon-action" title="Voltar etapa" data-move-status="${o.id}" data-direction="-1" ${STATUS.indexOf(o.status)===0?'disabled':''}>←</button>
          <button class="btn secondary small" data-open-order="${o.id}">Abrir</button>
          <button class="icon-action" title="Avançar etapa" data-move-status="${o.id}" data-direction="1" ${STATUS.indexOf(o.status)===STATUS.length-1?'disabled':''}>→</button>
        </div>
-     </article>`).join('');
+     </article>`;
+   }).join('');
 
    return `<section class="order-stage" data-stage="${esc(status)}">
       <header class="order-stage-head">

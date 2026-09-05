@@ -829,3 +829,64 @@ body{background:
 .main{font-size:13px}.main p,.main small{line-height:1.5}.page-head p{font-size:13px}.order-card{font-size:12px}.order-card-meta span,.order-card-meta strong{font-size:11px}.status-tabs button{font-size:11px}.btn{font-size:11px}.topbar .breadcrumb b{font-size:15px}.nav-item{font-size:11px}
 .rs-notification-popup.warning{border-color:rgba(255,194,106,.5);box-shadow:0 24px 80px rgba(0,0,0,.58),0 0 45px rgba(255,176,55,.13)}.rs-notification-popup.warning::after{background:linear-gradient(90deg,#ffb020,#ffd166,#ff9f1a)}
 @media(max-width:800px){.conversations-layout{grid-template-columns:1fr;min-height:0}.conversation-list{border-right:0;border-bottom:1px solid var(--line);max-height:220px;overflow:auto}.conversation-body{min-height:390px}.conversation-message{max-width:88%}.conversation-compose{flex-direction:column;align-items:stretch}.conversation-compose>div{justify-content:flex-end}.tracking-chat-fab{right:14px;bottom:14px}.tracking-chat-drawer{right:10px;bottom:88px;width:calc(100vw - 20px);height:min(680px,calc(100vh - 105px))}.tracking-approval-row{align-items:stretch;flex-direction:column}.tracking-approval-row .btn{width:100%}}
+
+
+/* PERFORMANCE 1.2 — cartões de pedido com arte destacada e altura íntegra.
+   content-visibility não é usado nos cartões porque pode atrasar/recortar
+   conteúdo visual variável como imagens e uploads. */
+.order-card{
+  content-visibility:visible!important;
+  contain:none!important;
+  min-height:0;
+  height:auto;
+  overflow:visible;
+}
+.order-card-art-featured{
+  height:150px!important;
+  min-height:150px!important;
+  display:block!important;
+  background:linear-gradient(145deg,rgba(7,24,22,.98),rgba(9,18,16,.92))!important;
+  border-color:rgba(85,232,255,.16)!important;
+  margin:12px 0 4px!important;
+}
+.order-card-art-featured img{
+  width:100%!important;
+  height:100%!important;
+  max-width:none!important;
+  object-fit:contain!important;
+  object-position:center!important;
+  display:block!important;
+  padding:7px!important;
+  box-sizing:border-box!important;
+}
+.order-card-art-featured span{
+  font-size:9px!important;
+  font-weight:700;
+  letter-spacing:.01em;
+}
+.orders-board-wrap{
+  display:flex!important;
+  min-height:0!important;
+}
+.orders-board{
+  flex:1 1 auto!important;
+  min-width:0!important;
+  min-height:0!important;
+}
+.order-stage{
+  min-height:0!important;
+}
+.order-stage-body{
+  align-content:start!important;
+  overflow-y:auto!important;
+  overflow-x:hidden!important;
+}
+@media(max-width:600px){
+  .order-card-art-featured{
+    height:138px!important;
+    min-height:138px!important;
+  }
+  .order-card-art-featured img{
+    padding:6px!important;
+  }
+}
