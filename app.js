@@ -365,6 +365,13 @@ async function syncOnlineBriefings(){
           linkId:o.id
         };
         notifications.unshift(newBriefingNotification);
+        // O briefing novo também precisa disparar a notificação do sistema.
+        // Antes da otimização ele era apenas salvo no painel interno.
+        showDesktopNotification(
+          'Novo briefing recebido',
+          `${o.project} • ${o.client}`,
+          'rafahstudio-briefing-'+String(o.id)
+        );
         window.dispatchEvent(new CustomEvent('rafah:new-briefing',{detail:{
           project_name:o.project,client_name:o.client,orderId:o.id
         }}));
@@ -594,10 +601,10 @@ async function showDesktopNotification(title,body,tag='rafahstudio'){
   try{
     if('serviceWorker' in navigator){
       const reg=await navigator.serviceWorker.ready;
-      await reg.showNotification(title,{body,icon:'assets/logo2.svg',badge:'assets/logo2.svg',tag,renotify:true,data:{url:location.href.split('#')[0]}});
+      await reg.showNotification(title,{body,icon:'assets/icon-192.png',badge:'assets/icon-192.png',tag,renotify:true,data:{url:location.href.split('#')[0]}});
       return;
     }
-    const n=new Notification(title,{body,icon:'assets/logo2.svg',tag});
+    const n=new Notification(title,{body,icon:'assets/icon-192.png',tag});
     n.onclick=()=>{window.focus();n.close();go('pedidos');};
   }catch(e){console.warn('Notificação do sistema:',e);}
 }
