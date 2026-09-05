@@ -166,8 +166,8 @@ async function fetchTrackingEvents(token){
   }catch(e){console.warn('[RafahStudio] Eventos do acompanhamento:',e);return [];}
 }
 function renderTrackingEventCards(events=[]){
-  if(!events.length)return '<div class="tracking-feed-empty"><span>✦</span><div><b>Ainda não há atualizações visuais.</b><small>As artes e mensagens do designer aparecerão aqui.</small></div></div>';
-  return events.map(ev=>{
+  const visible=events.filter(ev=>ev.author==='designer'&&['art','status','payment'].includes(ev.kind)); if(!visible.length)return '<div class="tracking-feed-empty"><span>✦</span><div><b>Ainda não há atualizações do designer.</b><small>Quando o designer atualizar o pedido, isso aparecerá aqui.</small></div></div>';
+  return visible.map(ev=>{
     const payment=ev.kind==='payment'&&ev.meta?ev.meta:{};
     const img=ev.image_url?`<button type="button" class="tracking-art-preview" data-public-art="${esc(ev.image_url)}"><img src="${esc(ev.image_url)}" alt="Atualização da arte"><span>Ampliar arte ↗</span></button>`:'';
     const label=ev.kind==='art'?'Nova versão da arte':ev.kind==='alteration'?'Alteração solicitada':ev.kind==='approval'?'Arte aprovada':ev.kind==='payment'?'Pagamento via PIX':'Mensagem';
@@ -178,7 +178,7 @@ function renderTrackingEventCards(events=[]){
 function classifyClientMessage(text){
   const t=String(text||'').toLowerCase();
   const alteration=/(alterar|alteração|mudar|trocar|troque|corrigir|correção|ajustar|ajuste|aumentar|diminuir|retirar|colocar|remover|cor|nome|foto|texto|fonte|logo|tamanho|posição|erro)/i.test(t);
-  const urgent=/(urgente|urgência|urgencia|rápido|rapido|rapidinho|o quanto antes|pra hoje|para hoje|preciso logo|preciso da arte|me manda logo|tem pressa|pressa|às pressas|as pressas)/i.test(t);
+  const urgent=/(urgente|urgência|urgencia|rápido|rapido|rapidinho|o quanto antes|pra hoje|para hoje|preciso logo|preciso da arte|me manda logo|manda logo|quero logo|tem pressa|pressa|às pressas|as pressas)/i.test(t);
   return {alteration,urgent};
 }
 async function submitPublicMessage(){
@@ -195,7 +195,7 @@ async function submitPublicMessage(){
     if(ai.alteration){
       $('#trackingChatHint')?.replaceChildren(document.createTextNode('Sua mensagem foi identificada como solicitação de alteração e enviada ao designer.'));
     }
-    await loadPublicTracking({silent:true,force:true});
+    await refreshTrackingChatOnly(token);
   }catch(e){$('#trackingActionMessage').textContent=e?.message||'Não foi possível enviar a mensagem.';}
   finally{if(btn){btn.disabled=false;btn.innerHTML='Enviar <span>→</span>';}}
 }
@@ -206,19 +206,6 @@ function renderTrackingChat(events=[]){
   box.scrollTop=box.scrollHeight;
 }
 
-async function submitPublicAlteration(){ const input=$('#trackingChatText'); if(input){input.focus();input.placeholder='Descreva a alteração que você deseja…';} }
-async function submitPublicApproval(){
-  if(!confirm('Confirmar que esta arte está aprovada?'))return;
-  const token=decodeURIComponent(location.hash.slice('#pedido='.length));
-  const btn=$('#trackingApproveBtn');if(btn){btn.disabled=true;btn.textContent='Confirmando…';}
-  try{
-    const {error}=await supabaseClient.rpc('submit_order_approval',{p_tracking_token:token,p_message:'Arte aprovada pelo cliente.'});
-    if(error)throw error;
-    $('#trackingActionMessage').textContent='Arte aprovada com sucesso. Obrigado!';
-    await loadPublicTracking();
-  }catch(e){$('#trackingActionMessage').textContent=e?.message||'Não foi possível confirmar a aprovação.';}
-  finally{if(btn){btn.disabled=false;btn.textContent='✓ Aprovar arte';}}
-}
 async function sendTrackingArtUpdate(orderId){
   const o=orders.find(x=>String(x.id)===String(orderId));if(!o)return;
   await ensureOrderTracking(o);
@@ -270,6 +257,35 @@ function renderConversations(){
   body?.scrollTo({top:body.scrollHeight,behavior:'auto'});
 }
 function openConversationForClient(name){conversationSelectedClient=name;go('conversas');}
+
+async function sendDesignerTrackingMessage(orderId,text,kind='message',meta={}){
+  const o=orders.find(x=>String(x.id)===String(orderId)); if(!o) throw new Error('Pedido não encontrado.');
+  await ensureOrderTracking(o);
+  if(!o.trackingToken) throw new Error('Este pedido ainda não possui acompanhamento.');
+  const payload={p_owner_secret:getOwnerToken(),p_tracking_token:o.trackingToken,p_kind:kind,p_message:String(text||''),p_image_url:'',p_meta:meta||{}};
+  const {data,error}=await supabaseClient.rpc('add_order_tracking_event',payload);
+  if(error) throw error;
+  const ev={id:data,tracking_token:o.trackingToken,order_id:String(o.id),author:'designer',kind,message:String(text||''),image_url:'',meta:meta||{},created_at:new Date().toISOString()};
+  o.trackingEvents=o.trackingEvents||[];
+  o.trackingEvents.unshift(ev);
+  persist();
+  await broadcastTrackingUpdate(o.trackingToken,'chat');
+  return ev;
+}
+async function sendPixToClient(orderId){
+  const o=orders.find(x=>String(x.id)===String(orderId)); if(!o) return;
+  const key=String(designer.pixKey||'').trim();
+  if(!key){toast('Cadastre sua chave PIX em Meu perfil antes de enviar.','error');go('perfil');return;}
+  const meta={pix_type:designer.pixType||'CPF',pix_key:key,pix_name:designer.pixName||designer.name||'RafahStudio'};
+  const msg=`Pagamento via PIX • ${meta.pix_name}`;
+  await sendDesignerTrackingMessage(o.id,msg,'payment',meta);
+  toast('PIX enviado na conversa.','success');
+}
+function openOrderHistory(id){
+  const o=orders.find(x=>String(x.id)===String(id)); if(!o)return;
+  const items=(o.history||[]).map(h=>`<div class="history-row"><span></span><div><b>${esc(h.text)}</b><small>${new Date(h.at).toLocaleString('pt-BR')}</small></div></div>`).join('');
+  modal(`<div class="modal-head"><div><span class="eyebrow">HISTÓRICO</span><h2>${esc(o.project)}</h2><p class="muted">Somente atividades do pedido.</p></div><button class="close-modal" data-close-modal>×</button></div><div class="history history-modal-list">${items||'<p class="muted">Sem histórico.</p>'}</div><div class="modal-actions"><button class="btn secondary" data-close-modal>Fechar</button></div>`);
+}
 async function sendConversationMessage(kind='message'){
   const name=conversationSelectedClient,text=$('#conversationText')?.value.trim();if(!name||!text)return;
   const target=clientOrders(name).find(o=>o.trackingToken)||clientOrders(name)[0];if(!target){toast('Esse cliente ainda não possui acompanhamento.','error');return;}
@@ -279,13 +295,18 @@ async function sendConversationMessage(kind='message'){
   renderConversations();
 }
 async function sendConversationPix(){
-  const target=clientOrders(conversationSelectedClient).find(o=>o.trackingToken)||clientOrders(conversationSelectedClient)[0];if(target)await sendPixToClient(target.id);renderConversations();
+  const target=clientOrders(conversationSelectedClient).find(o=>o.trackingToken)||clientOrders(conversationSelectedClient)[0];if(target){try{await sendPixToClient(target.id);}catch(e){toast(e?.message||'Não foi possível enviar o PIX.','error');}}renderConversations();
 }
 function setupConversations(){
   $('#conversationClients')?.addEventListener('click',e=>{const b=e.target.closest('[data-conversation-client]');if(b){conversationSelectedClient=b.dataset.conversationClient;renderConversations();}});
   $('#conversationForm')?.addEventListener('submit',e=>{e.preventDefault();sendConversationMessage();});
   $('#conversationText')?.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendConversationMessage();}});
   $('#conversationPixBtn')?.addEventListener('click',sendConversationPix);
+}
+async function refreshTrackingChatOnly(token){
+  if(!token||!supabaseClient)return;
+  try{const events=await fetchTrackingEvents(token);renderTrackingChat(events);}
+  catch(e){console.warn('[RafahStudio] Atualização do chat:',e);}
 }
 async function broadcastTrackingUpdate(token){
   if(!supabaseClient||!token)return;
@@ -302,7 +323,11 @@ async function setupTrackingRealtime(token,publicMode=false){
   try{
     if(trackingRealtimeChannel){supabaseClient.removeChannel(trackingRealtimeChannel);trackingRealtimeChannel=null;}
     trackingRealtimeChannel=supabaseClient.channel(`rafah-tracking-${token}`);
-    trackingRealtimeChannel.on('broadcast',{event:'rafah-update'},()=>{if(publicMode)loadPublicTracking({silent:true,force:true});});
+    trackingRealtimeChannel.on('broadcast',{event:'rafah-update'},async ({payload})=>{
+      if(!publicMode)return;
+      if(payload?.kind==='chat') await refreshTrackingChatOnly(token);
+      else await loadPublicTracking({silent:true,force:true});
+    });
     await trackingRealtimeChannel.subscribe();
   }catch(e){console.warn('[RafahStudio] Realtime:',e);}
 }
@@ -796,28 +821,14 @@ function filteredOrders(){
  const sort=$('#orderSort')?.value||'recent'; list.sort((a,b)=>sort==='deadline'?(a.deadline||'9999').localeCompare(b.deadline||'9999'):sort==='value'?b.value-a.value:sort==='oldest'?a.created.localeCompare(b.created):b.created.localeCompare(a.created)); return list;
 }
 function orderCardArtwork(o){
+  const events=(o?.trackingEvents||[]).filter(ev=>ev.kind==='art'&&ev.image_url).sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
+  const approved=events[0];
+  if(approved?.image_url)return {url:approved.image_url,label:'Última versão',alt:'Última versão enviada ao cliente'};
   const ready=o?.readyArt;
-  if(ready?.url||ready?.dataUrl){
-    return {
-      url: ready.url||ready.dataUrl,
-      label:'Arte final',
-      alt: ready.name||'Arte final'
-    };
-  }
+  if(ready?.url||ready?.dataUrl)return {url:ready.url||ready.dataUrl,label:'Arte final',alt:ready.name||'Arte final'};
   const files=Array.isArray(o?.files)?o.files:[];
-  const image=files.find(f=>{
-    if(!f)return false;
-    const type=String(f.type||'').toLowerCase();
-    const name=String(f.name||'').toLowerCase();
-    return type.startsWith('image/') || /\.(png|jpe?g|webp|gif|svg)$/i.test(name);
-  });
-  if(image?.url||image?.dataUrl){
-    return {
-      url:image.url||image.dataUrl,
-      label:'Arte / referência',
-      alt:image.name||'Arte do pedido'
-    };
-  }
+  const image=files.find(f=>f&&(String(f.type||'').toLowerCase().startsWith('image/')||/\.(png|jpe?g|webp|gif|svg)$/i.test(String(f.name||''))));
+  if(image?.url||image?.dataUrl)return {url:image.url||image.dataUrl,label:'Arte / referência',alt:image.name||'Arte do pedido'};
   return null;
 }
 function renderOrders(){
@@ -898,6 +909,25 @@ async function refreshCatalogFromSupabase(){
 function renderCatalog(){const q=($('#catalogSearch')?.value||'').toLowerCase().trim();const list=catalog.filter(x=>`${x.title||''} ${x.description||''}`.toLowerCase().includes(q));$('#catalogGrid')?.replaceChildren(...[]);const el=$('#catalogGrid');if(!el)return;el.innerHTML=list.map(x=>`<article class="catalog-card"><div class="catalog-cover">${x.image_url?`<img src="${esc(x.image_url)}" alt="${esc(x.title)}">`:'<span>▧</span>'}</div><div class="catalog-body"><h3>${esc(x.title)}</h3><p>${esc(x.description||'Referência do portfólio')}</p><div class="catalog-actions"><button class="btn secondary small" data-edit-catalog="${x.id}">Editar</button><button class="btn secondary small" data-delete-catalog="${x.id}">Remover</button></div></div></article>`).join('')||`<div class="empty-state"><span>▧</span><h3>Seu catálogo está vazio</h3><p>Adicione uma arte aprovada e paga para disponibilizá-la como referência.</p></div>`;}
 async function uploadCatalogImage(file){if(!supabaseClient)throw new Error('Supabase não está disponível.');const safe=(file.name||'catalogo').replace(/[^a-zA-Z0-9._-]/g,'_');const path=`catalog/${getOwnerToken()}/${Date.now()}-${safe}`;const {error}=await supabaseClient.storage.from('briefing-files').upload(path,file,{upsert:false,contentType:file.type||'image/jpeg'});if(error)throw error;return supabaseClient.storage.from('briefing-files').getPublicUrl(path).data.publicUrl;}
 function openCatalogForm(item=null,order=null){const x=item||{title:order?.project||'',description:order?`Referência de ${order.type||'projeto'}`:'',image_url:''};modal(`<div class="modal-head"><div><span class="eyebrow">CATÁLOGO</span><h2>${item?'Editar item':'Adicionar ao catálogo'}</h2></div><button class="close-modal" data-close-modal>×</button></div><form id="catalogForm"><label>Nome da arte<input id="catalogTitle" value="${esc(x.title)}" required></label><label>Descrição curta<textarea id="catalogDescription" rows="3">${esc(x.description||'')}</textarea></label><label class="upload-zone"><input id="catalogImage" type="file" accept="image/*"><span class="upload-icon">↑</span><b>Selecionar imagem da arte</b><small>Use uma imagem final, de preferência em boa resolução.</small></label><div id="catalogImagePreview" class="catalog-modal-preview">${x.image_url?`<img src="${esc(x.image_url)}" alt="Prévia">`:''}</div><div class="modal-actions"><button type="button" class="btn secondary" data-close-modal>Cancelar</button><button class="btn primary" type="submit">Salvar no catálogo</button></div></form>`);let selected=null;$('#catalogImage').onchange=e=>{selected=e.target.files[0]||null;if(selected){const r=new FileReader();r.onload=()=>$('#catalogImagePreview').innerHTML=`<img src="${r.result}" alt="Prévia">`;r.readAsDataURL(selected);}};$('#catalogForm').onsubmit=async e=>{e.preventDefault();const btn=e.submitter;btn.disabled=true;btn.textContent='Salvando…';try{let url=x.image_url||'';if(selected)url=await uploadCatalogImage(selected);if(!url)throw new Error('Escolha uma imagem para o item do catálogo.');const title=$('#catalogTitle').value.trim();const description=$('#catalogDescription').value.trim();if(!title)throw new Error('Informe o nome da arte.');if(item){const {error}=await supabaseClient.rpc('update_catalog_item',{p_owner_secret:getOwnerToken(),p_id:item.id,p_title:title,p_description:description,p_image_url:url});if(error)throw error;catalog=catalog.map(c=>c.id===item.id?{...c,title,description,image_url:url}:c);}else{const {data,error}=await supabaseClient.rpc('create_catalog_item',{p_owner_secret:getOwnerToken(),p_title:title,p_description:description,p_image_url:url});if(error)throw error;catalog.unshift({id:data,title,description,image_url:url,created:todayISO()});}persist();closeModal();renderCatalog();toast(item?'Item atualizado no catálogo.':'Arte adicionada ao catálogo.');}catch(err){toast(err?.message||'Não foi possível salvar o item.','error');btn.disabled=false;btn.textContent='Salvar no catálogo';}};}
+
+async function addApprovedArtToCatalog(orderId){
+  const o=orders.find(x=>String(x.id)===String(orderId)); if(!o)return;
+  const approval=(o.trackingEvents||[]).filter(ev=>ev.kind==='approval').sort((a,b)=>new Date(b.created_at)-new Date(a.created_at))[0];
+  const artCandidates=(o.trackingEvents||[]).filter(ev=>ev.kind==='art'&&ev.image_url&&(!approval||new Date(ev.created_at)<=new Date(approval.created_at)));
+  const latest=artCandidates.sort((a,b)=>new Date(b.created_at)-new Date(a.created_at))[0];
+  const imageUrl=latest?.image_url||o.readyArt?.url||o.readyArt?.dataUrl||'';
+  if(!imageUrl){toast('Nenhuma arte confirmada encontrada para adicionar ao catálogo.','error');return;}
+  if(!supabaseClient){toast('Conecte ao Supabase para usar o catálogo.','error');return;}
+  const title=`${o.client} — ${o.project}`;
+  const description=`Arte aprovada • ${o.client}`;
+  try{
+    const {data,error}=await supabaseClient.rpc('create_catalog_item',{p_owner_secret:getOwnerToken(),p_title:title,p_description:description,p_image_url:imageUrl});
+    if(error)throw error;
+    catalog.unshift({id:data,title,description,image_url:imageUrl,created:todayISO()});
+    persist(); renderCatalog(); closeModal();
+    toast('Arte aprovada adicionada ao catálogo.','success');
+  }catch(e){toast(e?.message||'Não foi possível adicionar ao catálogo.','error');}
+}
 async function deleteCatalogItem(id){const item=catalog.find(x=>x.id===id);if(!item)return;if(!confirm(`Remover “${item.title}” do catálogo?`))return;const {error}=await supabaseClient.rpc('delete_catalog_item',{p_owner_secret:getOwnerToken(),p_id:id});if(error){toast(error.message||'Não foi possível remover.','error');return;}catalog=catalog.filter(x=>x.id!==id);persist();renderCatalog();toast('Item removido do catálogo.','info');}
 function renderClients(){
  const q=($('#clientSearch')?.value||'').toLowerCase().trim(); let list=[...clients];
@@ -1090,8 +1120,43 @@ async function saveOrder(existing,peopleDraft=[],readyArtDraft=null){
   finally{if(btn){btn.disabled=false;btn.textContent='Salvar pedido';}}
 }
 function addHistory(o,text){o.history=o.history||[];o.history.unshift({id:uid('hist'),at:new Date().toISOString(),text});}
-function openOrderView(id){const o=orders.find(x=>x.id===id);if(!o)return; const b=o.briefing||{}; modal(`<div class="modal-head"><div><span class="eyebrow">DETALHES DO PEDIDO</span><h2>${esc(o.project)}</h2><p class="muted">${esc(o.client)} • ${esc(o.type)}</p></div><button class="close-modal" data-close-modal>×</button></div><div class="detail-top"><span class="status-pill ${statusClass(o.status)}">${esc(o.status)}</span><div class="detail-actions"><button class="btn secondary" data-share-tracking="${o.id}">↗ Acompanhar pedido</button><button class="btn secondary" data-edit-order="${o.id}">Editar pedido</button><button class="btn secondary" data-edit-order-client="${o.id}">Editar cliente</button><button class="btn secondary" data-order-pdf="${o.id}">PDF</button>${(o.paid||o.status==='Pago'||o.status==='Finalizado')?`<button class="btn secondary" data-add-catalog-order="${o.id}">▧ Catálogo</button>`:''}<button class="btn primary" data-cycle-status="${o.id}">Avançar status</button></div></div><div class="status-flow">${STATUS.map((s,i)=>`<span class="flow-step ${STATUS.indexOf(o.status)>=i?'done':''}"><i>${STATUS.indexOf(o.status)>=i?'✓':i+1}</i>${s}</span>`).join('')}</div><div class="detail-deadline-banner">${deadlineTag(o.deadline)}<span>Prazo: <b>${dateLabel(o.deadline)}</b></span></div><div class="detail-grid"><div class="detail-card"><b>Resumo</b><dl><div><dt>Cliente</dt><dd>${esc(o.client)}</dd></div><div><dt>Prazo</dt><dd>${dateLabel(o.deadline)}</dd></div><div><dt>Valor</dt><dd>${money(o.value)}</dd></div><div><dt>Pagamento</dt><dd>${o.paid||o.status==='Pago'?'Pago':'Pendente'}</dd></div></dl></div><div class="detail-card"><b>Briefing</b><p class="detail-text">${esc(b.texts||b.notes||'Nenhuma informação adicional registrada.')}</p>${b.refs?`<div class="ref-box"><b>Referências</b><p>${esc(b.refs)}</p></div>`:''}</div></div><div class="detail-card full-detail"><div class="detail-card-head"><b>Arquivos enviados pelo cliente</b><small>${(o.files||[]).length} arquivo(s)</small></div><div id="orderFiles" class="file-gallery">${renderFileGallery(o)}</div></div><div class="detail-card full-detail"><div class="detail-card-head"><b>Pessoas e fotos para a arte</b><small>${(Array.isArray(b.people)?b.people.length:0)+(Array.isArray(o.people)?o.people.length:0)} pessoa(s)</small></div><div class="file-gallery">${renderPeopleGallery(o)}</div></div>
-<div class="detail-card full-detail"><div class="detail-card-head"><b>Arte pronta / final</b><small>${o.readyArt?.name?'Arquivo anexado':'Ainda não anexada'}</small></div>${o.readyArt?.url||o.readyArt?.dataUrl?`<div class="ready-art-detail"><img src="${esc(o.readyArt.url||o.readyArt.dataUrl)}" alt="Arte final"><a class="btn secondary small" href="${esc(o.readyArt.url||o.readyArt.dataUrl)}" target="_blank" rel="noopener">Abrir arte original</a></div>`:`<div class="empty-mini center"><span>▧</span><div><b>Nenhuma arte pronta.</b><small>Edite o pedido para adicionar a arte final.</small></div></div>`}</div><div class="detail-card full-detail client-tracking-admin"><div class="detail-card-head"><div><b>Acompanhamento do cliente</b><small>Envie versões da arte e receba aprovações ou pedidos de alteração.</small></div><div class="detail-actions"><button class="btn secondary small" data-open-tracking-chat="${o.id}">💬 Chat</button><button class="btn secondary small" data-send-tracking-art="${o.id}">+ Enviar arte</button><button class="btn primary small" data-send-tracking-art="${o.id}">Enviar arte para aprovação</button></div></div><div class="designer-track-events">${renderDesignerTrackingEvents(o)}</div></div><div class="detail-card full-detail"><div class="detail-card-head"><b>Histórico</b><small>Atividades do pedido</small></div><div class="history">${(o.history||[]).map(h=>`<div><span></span><p><b>${esc(h.text)}</b><small>${new Date(h.at).toLocaleString('pt-BR')}</small></p></div>`).join('')||'<p class="muted">Sem histórico.</p>'}</div></div><div class="modal-actions"><button class="btn danger-btn" data-delete-order="${o.id}">Excluir pedido</button><button class="btn secondary" data-toggle-paid="${o.id}">${o.paid?'Marcar como pendente':'Marcar como pago'}</button></div>`); }
+function openOrderView(id){
+  const o=orders.find(x=>x.id===id); if(!o)return;
+  const b=o.briefing||{};
+  const hasCatalogReady=o.paid||o.status==='Pago'||o.status==='Finalizado';
+  modal(`<div class="modal-head">
+    <div><span class="eyebrow">DETALHES DO PEDIDO</span><h2>${esc(o.project)}</h2><p class="muted">${esc(o.client)} • ${esc(o.type)}</p></div>
+    <button class="close-modal" data-close-modal>×</button>
+  </div>
+  <div class="detail-top">
+    <span class="status-pill ${statusClass(o.status)}">${esc(o.status)}</span>
+    <div class="detail-actions">
+      <button class="btn secondary" data-share-tracking="${o.id}">↗ Acompanhar pedido</button>
+      <button class="btn secondary" data-edit-order="${o.id}">Editar pedido</button>
+      <button class="btn secondary" data-order-pdf="${o.id}">PDF</button>
+      ${hasCatalogReady?`<button class="btn secondary" data-add-catalog-order="${o.id}">＋ Adicionar ao catálogo</button>`:''}
+      <button class="btn primary" data-cycle-status="${o.id}">Avançar status</button>
+    </div>
+  </div>
+  <div class="status-flow">${STATUS.map((s,i)=>`<span class="flow-step ${STATUS.indexOf(o.status)>=i?'done':''}"><i>${STATUS.indexOf(o.status)>=i?'✓':i+1}</i>${s}</span>`).join('')}</div>
+  <div class="detail-deadline-banner">${deadlineTag(o.deadline)}<span>Prazo: <b>${dateLabel(o.deadline)}</b></span></div>
+  <div class="detail-grid">
+    <div class="detail-card"><b>Resumo</b><dl>
+      <div><dt>Cliente</dt><dd>${esc(o.client)}</dd></div>
+      <div><dt>Prazo</dt><dd>${dateLabel(o.deadline)}</dd></div>
+      <div><dt>Valor</dt><dd>${money(o.value)}</dd></div>
+      <div><dt>Pagamento</dt><dd>${o.paid||o.status==='Pago'?'Pago':'Pendente'}</dd></div>
+    </dl></div>
+    <div class="detail-card"><b>Briefing</b><p class="detail-text">${esc(b.texts||b.notes||'Nenhuma informação adicional registrada.')}</p>${b.refs?`<div class="ref-box"><b>Referências</b><p>${esc(b.refs)}</p></div>`:''}</div>
+  </div>
+  <div class="detail-card full-detail"><div class="detail-card-head"><b>Arquivos enviados pelo cliente</b><small>${(o.files||[]).length} arquivo(s)</small></div><div id="orderFiles" class="file-gallery">${renderFileGallery(o)}</div></div>
+  <div class="detail-card full-detail"><div class="detail-card-head"><b>Pessoas e fotos para a arte</b><small>${(Array.isArray(b.people)?b.people.length:0)+(Array.isArray(o.people)?o.people.length:0)} pessoa(s)</small></div><div class="file-gallery">${renderPeopleGallery(o)}</div></div>
+  <div class="detail-card full-detail"><div class="detail-card-head"><div><b>Arte para aprovação</b><small>Envie uma nova versão somente quando estiver pronta para o cliente conferir.</small></div><button class="btn primary small" data-send-tracking-art="${o.id}">Enviar arte para aprovação</button></div>
+    ${o.readyArt?.url||o.readyArt?.dataUrl?`<div class="ready-art-detail"><img src="${esc(o.readyArt.url||o.readyArt.dataUrl)}" alt="Arte final"><a class="btn secondary small" href="${esc(o.readyArt.url||o.readyArt.dataUrl)}" target="_blank" rel="noopener">Abrir arte original</a></div>`:'<div class="empty-mini center"><span>▧</span><div><b>Nenhuma arte final anexada.</b><small>Use o botão acima para enviar uma versão ao cliente.</small></div></div>'}
+  </div>
+  <div class="detail-card full-detail order-history-summary"><div class="detail-card-head"><div><b>Histórico do pedido</b><small>${(o.history||[]).length} registro(s)</small></div><button class="btn secondary small" data-open-history="${o.id}">Ver histórico</button></div></div>
+  <div class="modal-actions"><button class="btn danger-btn" data-delete-order="${o.id}">Excluir pedido</button><button class="btn secondary" data-toggle-paid="${o.id}">${o.paid?'Marcar como pendente':'Marcar como pago'}</button></div>`);
+}
 function renderFileGallery(o){
   if(!o.files?.length)return`<div class="empty-mini center"><span>↑</span><div><b>Nenhum arquivo anexado.</b><small>Arquivos enviados pelo cliente aparecerão aqui.</small></div></div>`;
   return o.files.map((f,i)=>{
@@ -1229,6 +1294,7 @@ async function syncPublicProfileLink(token=getPublicToken()){
       p_portfolio:designer.portfolio||'',
       p_email:designer.email||'',
       p_banner:designer.banner||'',
+      p_photo:designer.photo||'',
       p_pix_type:designer.pixType||'CPF',
       p_pix_key:designer.pixKey||'',
       p_pix_name:designer.pixName||''
@@ -1312,7 +1378,7 @@ async function loadPublicTracking(opts={}){
     if(!o)throw new Error('Este link de acompanhamento não existe ou foi desativado.');
     const profile=o.public_token?await (async()=>{try{const {data}=await supabaseClient.rpc('get_public_profile_for_token',{p_public_token:o.public_token});return Array.isArray(data)?(data[0]||{}):(data||{});}catch{return {}}})():{};
     const status=o.status||'Novo', info=TRACKING_STATUS_INFO[status]||TRACKING_STATUS_INFO.Novo, progress=trackingProgress(status);
-    $('#trackingBrandName').textContent=profile.name||'RafahStudio';
+    $('#trackingBrandName').textContent=profile.name||'RafahStudio'; const trackAvatar=$('#trackingDesignerAvatar'); if(trackAvatar) trackAvatar.innerHTML=profile.photo?`<img src="${esc(profile.photo)}" alt="">`:esc(initials(profile.name||'RafahStudio'));
     $('#trackingProject').textContent=o.project_name||'Seu pedido';
     $('#trackingClient').textContent=o.client_name||'Cliente';
     $('#trackingService').textContent=o.service_type||'Projeto';
@@ -1334,8 +1400,8 @@ async function loadPublicTracking(opts={}){
     renderTrackingChat(events);
     const newOrder=$('#trackingNewOrderBtn');if(newOrder&&o.public_token)newOrder.href=`#briefing=${encodeURIComponent(o.public_token)}`;
     const hasArt=events.some(x=>x.kind==='art'&&x.image_url);
-    $('#trackingApproveBtn').disabled=!hasArt||['Entregue','Pago','Finalizado'].includes(status);
-    $('#trackingChangeBtn').disabled=['Pago','Finalizado'].includes(status);
+    const approveBtn=$('#trackingApproveBtn'); if(approveBtn) approveBtn.disabled=!hasArt||['Entregue','Pago','Finalizado'].includes(status);
+    const changeBtn=$('#trackingChangeBtn'); if(changeBtn) changeBtn.disabled=['Pago','Finalizado'].includes(status);
     content?.classList.remove('hidden');
   }catch(e){console.warn('Acompanhamento público:',e);errorBox?.classList.remove('hidden');$('#trackingErrorText').textContent=e?.message||'Não foi possível carregar este pedido.';}
   finally{if(!opts.silent)loading?.classList.add('hidden');}
@@ -1357,7 +1423,7 @@ function setupPublic(){
   $('#publicCatalogToggle')?.addEventListener('click',()=>{const d=$('#publicCatalogDrawer');if(!d)return;d.classList.toggle('hidden');const b=$('#publicCatalogToggle');b.classList.toggle('open',!d.classList.contains('hidden'));});
   $('#publicFormView')?.classList.remove('hidden');
   $('#publicSuccess')?.classList.add('hidden');
-  async function loadPublicCatalog(){const token=briefingTokenFromHash();if(!token||!supabaseClient)return;try{const {data,error}=await supabaseClient.rpc('get_catalog_for_public',{p_public_token:token});if(error)throw error;publicCatalog=Array.isArray(data)?data:[];const sec=$('#publicCatalogSection'),grid=$('#publicCatalogGrid');if(!publicCatalog.length){sec?.classList.add('hidden');return;}sec?.classList.remove('hidden');const drawer=$('#publicCatalogDrawer');if(drawer)drawer.classList.add('hidden');grid.innerHTML=publicCatalog.map(x=>`<button type="button" class="public-catalog-item" data-catalog-id="${x.id}"><span class="public-catalog-image"><img src="${esc(x.image_url)}" alt="${esc(x.title)}"></span><span><b>${esc(x.title)}</b><small>${esc(x.description||'')}</small></span><i>✓</i><em>Ver arte</em></button>`).join('');
+  async function loadPublicCatalog(){const token=briefingTokenFromHash();if(!token||!supabaseClient)return;try{const {data,error}=await supabaseClient.rpc('get_catalog_for_public',{p_public_token:token});if(error)throw error;publicCatalog=Array.isArray(data)?data:[];const sec=$('#publicCatalogSection'),grid=$('#publicCatalogGrid');if(!sec||!grid)return;if(!publicCatalog.length){sec.classList.add('hidden');return;}sec.classList.remove('hidden');const drawer=$('#publicCatalogDrawer');if(drawer)drawer.classList.add('hidden');grid.innerHTML=publicCatalog.map(x=>`<button type="button" class="public-catalog-item" data-catalog-id="${x.id}"><span class="public-catalog-image"><img src="${esc(x.image_url)}" alt="${esc(x.title)}"></span><span><b>${esc(x.title)}</b><small>${esc(x.description||'')}</small></span><i>✓</i><em>Ver arte</em></button>`).join('');
 grid.querySelectorAll('[data-catalog-id]').forEach(btn=>btn.onclick=()=>{
   const id=btn.dataset.catalogId;
   const found=publicCatalog.find(x=>String(x.id)===String(id));
@@ -1408,14 +1474,64 @@ function openPublicCatalogPreview(found){
   $('#briefingForm').onsubmit=async e=>{e.preventDefault();if(!supabaseClient)initSupabaseClient();if(!supabaseClient){$('#publicMessage').textContent='Não foi possível conectar ao servidor. Verifique sua internet e atualize a página.';return;}const publicToken=briefingTokenFromHash();if(!publicToken){$('#publicMessage').textContent='Link de briefing inválido ou expirado. Solicite um novo link ao designer.';return;}const files=$('#pubFiles')._files||[];const persons=people.map(p=>({name:p.name,info:p.info,photo:p.photo?{name:p.photo.name,type:p.photo.type,size:p.photo.size}:null}));const catalogText=selectedCatalog.length?`Referências do catálogo: ${selectedCatalog.map(x=>x.title).join(', ')}`:'';const refsBase=$('#pubRefs').value.trim();const combinedRefs=[catalogText,refsBase].filter(Boolean).join('\n\n');const d={client:$('#pubName').value.trim(),whats:$('#pubWhats').value.trim(),project:$('#pubProject').value.trim(),deadline:$('#pubEvent').value,type:$('#pubType').value,texts:$('#pubTexts').value,people:persons,refs:combinedRefs,notes:$('#pubNotes').value};if(!d.client||!d.project){$('#publicMessage').textContent='Nome e projeto são obrigatórios.';return;}const btn=$('#briefingForm button[type="submit"]');if(btn){btn.disabled=true;btn.textContent='Enviando…';}try{const briefingId=crypto.randomUUID?.()||uid('brief');const uploaded=[];for(let i=0;i<files.length;i++){if(files[i].file)uploaded.push(await uploadBriefingFile(files[i].file,publicToken,briefingId,i));}for(let i=0;i<people.length;i++){if(people[i].photo?.file){const up=await uploadBriefingFile(people[i].photo.file,publicToken,briefingId,`p${i}`);d.people[i].photo=up;}}const {data:submitData,error}=await supabaseClient.rpc('submit_briefing',{p_public_token:publicToken,p_briefing_id:briefingId,p_client_name:d.client,p_whatsapp:d.whats,p_project_name:d.project,p_deadline:d.deadline||null,p_service_type:d.type,p_texts:d.texts,p_people:d.people,p_references_text:d.refs,p_notes:d.notes,p_files:uploaded});if(error)throw error;const trackingToken=submitData?.tracking_token||submitData?.trackingToken||'';$('#publicFormView').classList.add('hidden');$('#publicSuccess').classList.remove('hidden');$('#successProject').textContent=d.project;const trackBtn=$('#successTrackingBtn');if(trackBtn){trackBtn.href=trackingToken?`#pedido=${encodeURIComponent(trackingToken)}`:'#';trackBtn.classList.toggle('disabled',!trackingToken);trackBtn.dataset.trackingToken=trackingToken;}loadPublicProfile();window.scrollTo({top:0,behavior:'smooth'});}catch(err){console.error(err);$('#publicMessage').textContent=`Não foi possível enviar. ${err?.message||'Tente novamente.'}`;if(btn){btn.disabled=false;btn.textContent='Enviar briefing →';}}};
   $('#newPublicOrderBtn').onclick=()=>{ $('#publicSuccess').classList.add('hidden');$('#publicFormView').classList.remove('hidden');$('#briefingForm').reset();people=[];selectedCatalog=[];paintPeople();$('#filePreview').innerHTML='';$('#pubFiles')._files=[];$('#publicMessage').textContent='';const btn=$('#briefingForm button[type="submit"]');if(btn){btn.disabled=false;btn.textContent='Enviar briefing →';}loadPublicProfile();window.scrollTo({top:0,behavior:'smooth'});};
   $('#successTrackingBtn')?.addEventListener('click',e=>{const href=e.currentTarget.getAttribute('href');if(!href||href==='#')return;e.preventDefault();location.hash=href.slice(1);location.reload();});
-  paintPeople();loadPublicCatalog();loadPublicProfile();
+  paintPeople();loadPublicProfile();
 }
 function exportBackup(){const payload={version:2,exportedAt:new Date().toISOString(),designer,orders,clients,quotes,notifications};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});downloadBlob(blob,`rafahstudio-backup-${todayISO()}.json`);toast('Backup exportado.');}
 function importBackup(file){const r=new FileReader();r.onload=()=>{try{const p=JSON.parse(r.result);if(!p||!Array.isArray(p.orders))throw new Error();orders=p.orders.map(normalizeOrder);clients=Array.isArray(p.clients)?p.clients:[];quotes=Array.isArray(p.quotes)?p.quotes:[];notifications=Array.isArray(p.notifications)?p.notifications:[];designer={...designer,...(p.designer||{})};persist();render();toast('Backup importado com sucesso.');}catch{toast('Arquivo de backup inválido.','error');}};r.readAsText(file);}
 function downloadBlob(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000);}
-function pdfWindow(title,body){const w=window.open('','_blank','noopener,noreferrer');if(!w){toast('Permita pop-ups para gerar o PDF.','error');return;}w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title><style>@page{size:A4;margin:16mm}body{font:14px Arial;color:#16201e;margin:0}header{border-bottom:2px solid #dfe8e5;padding-bottom:16px;margin-bottom:24px;display:flex;justify-content:space-between}h1{font-size:24px;margin:0 0 6px}h2{font-size:15px;margin:22px 0 10px}small{color:#657773}table{width:100%;border-collapse:collapse}td,th{padding:9px;border-bottom:1px solid #e4ebe9;text-align:left}th{font-size:11px;color:#657773}p{line-height:1.55}.badge{display:inline-block;padding:6px 9px;border-radius:99px;background:#e9f5f1}.total{font-size:22px;font-weight:800}.box{background:#f5f8f7;padding:14px;border-radius:10px;white-space:pre-wrap}footer{margin-top:30px;padding-top:12px;border-top:1px solid #e4ebe9;color:#657773;font-size:11px}</style></head><body>${body}<footer>RafahStudio • Documento gerado em ${new Date().toLocaleString('pt-BR')}</footer><script>window.onload=()=>setTimeout(()=>window.print(),300)<\/script></body></html>`);w.document.close();}
-function generateOrderPDF(id){const o=orders.find(x=>x.id===id);if(!o)return;const b=o.briefing||{};const people=(b.people||[]).map(p=>`<tr><td>${esc(p.name)}</td><td>${esc(p.info||'—')}</td></tr>`).join('');const body=`<header><div><h1>RafahStudio</h1><small>${esc(designer.name||'Designer')} ${designer.brand&&designer.brand!=='RafahStudio'?'• '+esc(designer.brand):''}</small></div><div><b>PEDIDO</b><br><small>${esc(o.id)}</small></div></header><p><span class="badge">${esc(o.status)}</span></p><table><tr><th>Cliente</th><td>${esc(o.client)}</td><th>Projeto</th><td>${esc(o.project)}</td></tr><tr><th>Serviço</th><td>${esc(o.type)}</td><th>Prazo</th><td>${dateLabel(o.deadline)}</td></tr><tr><th>Valor</th><td>${money(o.value)}</td><th>Pagamento</th><td>${o.paid||o.status==='Pago'?'Pago':'Pendente'}</td></tr></table><h2>Briefing</h2><div class="box">${esc(b.texts||b.notes||'Sem briefing adicional.')}</div>${b.people?.length?`<h2>Pessoas da arte</h2><table><tr><th>Nome</th><th>Informação</th></tr>${people}</table>`:''}${b.refs?`<h2>Referências</h2><div class="box">${esc(b.refs)}</div>`:''}${b.notes?`<h2>Observações</h2><div class="box">${esc(b.notes)}</div>`:''}`;pdfWindow(`Pedido — ${o.project}`,body);}
-function generateQuotePDF(id){const q=quotes.find(x=>x.id===id);if(!q)return;const rows=(q.items||[]).map(i=>`<tr><td>${esc(i.desc||'Serviço')}</td><td>${i.qty}</td><td>${money(i.price)}</td><td>${money((Number(i.qty)||0)*(Number(i.price)||0))}</td></tr>`).join('');const body=`<header><div><h1>RafahStudio</h1><small>${esc(designer.name||'Designer')} ${designer.whats?'• '+esc(designer.whats):''}</small></div><div><b>ORÇAMENTO</b><br><small>${esc(q.id)}</small></div></header><table><tr><th>Cliente</th><td>${esc(q.client)}</td><th>Projeto</th><td>${esc(q.project)}</td></tr><tr><th>Validade</th><td>${dateLabel(q.valid)}</td><th>Status</th><td>${esc(q.status)}</td></tr></table><h2>Itens</h2><table><tr><th>Descrição</th><th>Qtd.</th><th>Unitário</th><th>Total</th></tr>${rows}</table><p><b>Subtotal:</b> ${money(q.subtotal)}<br><b>Desconto:</b> ${money(q.discount)}<br><span class="total">Total: ${money(q.total)}</span></p>${q.terms?`<h2>Condições</h2><div class="box">${esc(q.terms)}</div>`:''}`;pdfWindow(`Orçamento — ${q.project}`,body);}
+const RAFahPdfLogoSvg="\n\n<!-- Creator: CorelDRAW -->\n<svg xmlns=\"http://www.w3.org/2000/svg\" xml:space=\"preserve\" width=\"400px\" height=\"140px\" version=\"1.1\" style=\"shape-rendering:geometricPrecision; text-rendering:geometricPrecision; image-rendering:optimizeQuality; fill-rule:evenodd; clip-rule:evenodd\"\nviewBox=\"0 0 9.97 3.48\"\n xmlns:xlink=\"http://www.w3.org/1999/xlink\"\n xmlns:xodm=\"http://www.corel.com/coreldraw/odm/2003\">\n <defs>\n  <style type=\"text/css\">\n   <![CDATA[\n    .fil1 {fill:#0f2923}\n    .fil0 {fill:#0f2923;fill-rule:nonzero}\n    .fil2 {fill:url(#id0)}\n   ]]>\n  </style>\n  <linearGradient id=\"id0\" gradientUnits=\"userSpaceOnUse\" x1=\"0.09\" y1=\"2.68\" x2=\"1.04\" y2=\"3.24\">\n   <stop offset=\"0\" style=\"stop-opacity:1; stop-color:#0148FA\"/>\n   <stop offset=\"0.490196\" style=\"stop-opacity:1; stop-color:#029CFE\"/>\n   <stop offset=\"1\" style=\"stop-opacity:1; stop-color:#07D6FE\"/>\n  </linearGradient>\n </defs>\n <g id=\"Camada_x0020_1\">\n  <metadata id=\"CorelCorpID_0Corel-Layer\"/>\n  <path class=\"fil0\" d=\"M4.22 3.48c-0.11,0 -0.2,-0.02 -0.27,-0.07 -0.08,-0.05 -0.13,-0.12 -0.16,-0.21l0.13 -0.07c0.05,0.14 0.15,0.2 0.3,0.2 0.08,0 0.14,-0.01 0.18,-0.04 0.04,-0.03 0.06,-0.08 0.06,-0.13 0,-0.05 -0.02,-0.09 -0.06,-0.12 -0.04,-0.03 -0.11,-0.06 -0.2,-0.09 -0.05,-0.01 -0.09,-0.03 -0.11,-0.04 -0.03,0 -0.06,-0.02 -0.1,-0.04 -0.03,-0.02 -0.06,-0.03 -0.08,-0.05 -0.02,-0.02 -0.03,-0.05 -0.05,-0.08 -0.01,-0.04 -0.02,-0.07 -0.02,-0.11 0,-0.1 0.03,-0.18 0.1,-0.24 0.07,-0.06 0.16,-0.08 0.26,-0.08 0.09,0 0.16,0.02 0.23,0.06 0.07,0.05 0.12,0.11 0.15,0.18l-0.13 0.08c-0.04,-0.12 -0.13,-0.18 -0.25,-0.18 -0.07,0 -0.11,0.02 -0.15,0.05 -0.04,0.03 -0.06,0.07 -0.06,0.12 0,0.05 0.02,0.09 0.05,0.11 0.04,0.03 0.1,0.06 0.19,0.08 0.03,0.01 0.05,0.02 0.06,0.03 0.02,0 0.04,0.01 0.07,0.02 0.02,0.01 0.04,0.02 0.06,0.02 0.01,0.01 0.03,0.02 0.05,0.03 0.02,0.01 0.04,0.02 0.05,0.04 0.01,0.01 0.02,0.02 0.04,0.04 0.01,0.01 0.02,0.03 0.03,0.04 0.01,0.02 0.01,0.04 0.02,0.06 0,0.02 0,0.04 0,0.07 0,0.1 -0.03,0.18 -0.11,0.23 -0.07,0.06 -0.16,0.09 -0.28,0.09zm0.97 -0.69l-0.21 0 0 0.44c0,0.04 0.01,0.06 0.02,0.08 0.02,0.02 0.04,0.03 0.07,0.03 0.04,0 0.08,0 0.12,-0.01l0 0.13c-0.12,0.02 -0.21,0.01 -0.27,-0.03 -0.05,-0.03 -0.08,-0.1 -0.08,-0.2l0 -0.44 -0.16 0 0 -0.14 0.16 0 0 -0.18 0.14 -0.05 0 0.23 0.21 0 0 0.14zm0.73 -0.14l0.15 0 0 0.81 -0.15 0 0 -0.12c-0.05,0.1 -0.14,0.14 -0.26,0.14 -0.09,0 -0.17,-0.03 -0.23,-0.09 -0.05,-0.06 -0.08,-0.14 -0.08,-0.24l0 -0.5 0.14 0 0 0.49c0,0.07 0.02,0.12 0.05,0.15 0.04,0.04 0.09,0.06 0.15,0.06 0.07,0 0.13,-0.02 0.17,-0.07 0.04,-0.04 0.06,-0.11 0.06,-0.2l0 -0.43zm1.03 -0.32l0.14 0 0 1.13 -0.14 0 0 -0.14c-0.07,0.11 -0.17,0.16 -0.31,0.16 -0.11,0 -0.21,-0.04 -0.29,-0.12 -0.08,-0.08 -0.12,-0.19 -0.12,-0.3 0,-0.12 0.04,-0.22 0.12,-0.31 0.08,-0.08 0.18,-0.12 0.29,-0.12 0.14,0 0.24,0.05 0.31,0.16l0 -0.46zm-0.29 1.02c0.08,0 0.15,-0.03 0.21,-0.09 0.05,-0.05 0.08,-0.12 0.08,-0.2 0,-0.09 -0.03,-0.16 -0.08,-0.21 -0.06,-0.06 -0.13,-0.08 -0.21,-0.08 -0.08,0 -0.15,0.02 -0.2,0.08 -0.06,0.05 -0.08,0.12 -0.08,0.21 0,0.08 0.02,0.15 0.08,0.2 0.05,0.06 0.12,0.09 0.2,0.09zm0.72 -0.85c-0.03,0 -0.05,-0.01 -0.07,-0.02 -0.02,-0.02 -0.03,-0.05 -0.03,-0.07 0,-0.03 0.01,-0.05 0.03,-0.07 0.02,-0.02 0.04,-0.03 0.07,-0.03 0.02,0 0.05,0.01 0.06,0.03 0.02,0.02 0.03,0.04 0.03,0.07 0,0.02 -0.01,0.05 -0.03,0.07 -0.01,0.01 -0.04,0.02 -0.06,0.02zm-0.07 0.96l0 -0.81 0.14 0 0 0.81 -0.14 0zm1.04 -0.1c-0.09,0.08 -0.19,0.12 -0.31,0.12 -0.11,0 -0.22,-0.04 -0.3,-0.12 -0.08,-0.08 -0.12,-0.18 -0.12,-0.3 0,-0.12 0.04,-0.23 0.12,-0.31 0.08,-0.08 0.19,-0.12 0.3,-0.12 0.12,0 0.22,0.04 0.31,0.12 0.08,0.08 0.12,0.19 0.12,0.31 0,0.12 -0.04,0.22 -0.12,0.3zm-0.31 -0.02c0.09,0 0.15,-0.02 0.21,-0.08 0.05,-0.05 0.08,-0.12 0.08,-0.2 0,-0.09 -0.03,-0.15 -0.08,-0.21 -0.06,-0.06 -0.12,-0.08 -0.21,-0.08 -0.08,0 -0.14,0.02 -0.2,0.08 -0.05,0.06 -0.08,0.12 -0.08,0.21 0,0.08 0.03,0.15 0.08,0.2 0.06,0.06 0.12,0.08 0.2,0.08z\"/>\n  <path class=\"fil0\" d=\"M6.07 0.8l0.31 0 0 1.19 -0.31 0 0 -0.14c-0.09,0.11 -0.22,0.17 -0.38,0.17 -0.16,0 -0.3,-0.06 -0.41,-0.18 -0.11,-0.12 -0.17,-0.27 -0.17,-0.45 0,-0.17 0.06,-0.32 0.17,-0.44 0.11,-0.12 0.25,-0.18 0.41,-0.18 0.16,0 0.29,0.06 0.38,0.17l0 -0.14zm-0.56 0.83c0.06,0.07 0.14,0.1 0.23,0.1 0.1,0 0.18,-0.03 0.24,-0.1 0.06,-0.06 0.09,-0.14 0.09,-0.24 0,-0.09 -0.03,-0.17 -0.09,-0.24 -0.06,-0.06 -0.14,-0.09 -0.24,-0.09 -0.09,0 -0.17,0.03 -0.23,0.09 -0.06,0.07 -0.09,0.15 -0.09,0.24 0,0.1 0.03,0.18 0.09,0.24z\"/>\n  <path class=\"fil0\" d=\"M7.29 0.59c-0.17,-0.01 -0.25,0.05 -0.25,0.2l0 0.01 0.25 0 0 0.3 -0.25 0 0 0.89 -0.31 0 0 -0.89 -0.17 0 0 -0.3 0.17 0 0 -0.01c0,-0.17 0.05,-0.29 0.14,-0.38 0.1,-0.09 0.24,-0.13 0.42,-0.11l0 0.29z\"/>\n  <path class=\"fil0\" d=\"M8.28 0.8l0.31 0 0 1.19 -0.31 0 0 -0.14c-0.09,0.11 -0.22,0.17 -0.38,0.17 -0.16,0 -0.29,-0.06 -0.41,-0.18 -0.11,-0.12 -0.17,-0.27 -0.17,-0.45 0,-0.17 0.06,-0.32 0.17,-0.44 0.12,-0.12 0.25,-0.18 0.41,-0.18 0.16,0 0.29,0.06 0.38,0.17l0 -0.14zm-0.56 0.83c0.06,0.07 0.14,0.1 0.24,0.1 0.09,0 0.17,-0.03 0.23,-0.1 0.06,-0.06 0.09,-0.14 0.09,-0.24 0,-0.09 -0.03,-0.17 -0.09,-0.24 -0.06,-0.06 -0.14,-0.09 -0.23,-0.09 -0.1,0 -0.18,0.03 -0.24,0.09 -0.06,0.07 -0.09,0.15 -0.09,0.24 0,0.1 0.03,0.18 0.09,0.24z\"/>\n  <path class=\"fil0\" d=\"M9.53 0.77c0.12,0 0.23,0.04 0.32,0.13 0.08,0.09 0.12,0.21 0.12,0.36l0 0.73 -0.3 0 0 -0.69c0,-0.08 -0.02,-0.14 -0.07,-0.18 -0.04,-0.05 -0.1,-0.07 -0.17,-0.07 -0.08,0 -0.14,0.03 -0.19,0.08 -0.04,0.05 -0.07,0.12 -0.07,0.22l0 0.64 -0.3 0 0 -1.66 0.3 0 0 0.6c0.08,-0.11 0.19,-0.16 0.36,-0.16z\"/>\n  <g id=\"_2555488677520\">\n   <path class=\"fil1\" d=\"M4.12 1.41l-0.07 0c-0.14,0 -0.26,-0.12 -0.26,-0.26l0 -0.82 0.66 0c0.16,0 0.29,0.05 0.39,0.16 0.11,0.11 0.17,0.24 0.17,0.39 0,0.1 -0.03,0.2 -0.09,0.28 -0.06,0.09 -0.14,0.16 -0.23,0.2l0.36 0.63 -0.35 0 -0.33 -0.58 -0.25 0zm0 -0.78l0 0.49 0.33 0c0.07,0 0.12,-0.02 0.16,-0.07 0.05,-0.05 0.07,-0.1 0.07,-0.17 0,-0.07 -0.02,-0.13 -0.07,-0.18 -0.04,-0.04 -0.09,-0.07 -0.16,-0.07l-0.33 0z\"/>\n   <path class=\"fil1\" d=\"M4.12 1.99l0 0 0 -0.33 -0.33 0 0 0c0,0.18 0.15,0.33 0.33,0.33z\"/>\n  </g>\n  <path class=\"fil1\" d=\"M0.91 0.72l0 0.96c-0.44,0 -0.91,-0.38 -0.91,-0.85l0 -0.11 0 -0.72 2.44 0c0.44,0 0.79,0.38 0.79,0.83l0 0.86c0,0.46 -0.35,0.83 -0.79,0.83l-0.01 0 0 0 0.41 0c0.21,0 0.39,0.19 0.39,0.42l0 0.13c0,0.22 -0.18,0.41 -0.39,0.41l-0.41 0c-0.41,0 -0.74,-0.34 -0.74,-0.77l0 -0.19 0 -0.84 0.31 0c0.22,0 0.4,-0.19 0.4,-0.42l0 -0.01c0,-0.23 -0.18,-0.42 -0.4,-0.42l-0.31 0 -0.78 0 0 0.85 0 -0.96z\"/>\n  <path class=\"fil2\" d=\"M1.12 2.44l-1.12 0 0 0c0,0.57 0.47,1.04 1.04,1.04l0.08 0 0 -1.04z\"/>\n </g>\n</svg>\n";
+function pdfWindow(title,body){
+  const w=window.open('','_blank','noopener,noreferrer');
+  if(!w){toast('Permita pop-ups para gerar o PDF.','error');return;}
+  w.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${esc(title)}</title>
+  <style>
+  @page{size:A4;margin:12mm}
+  *{box-sizing:border-box}html,body{margin:0;padding:0;background:#fff;color:#16231f}
+  body{font-family:Arial,Helvetica,sans-serif;font-size:10.5pt;line-height:1.45}
+  .pdf{width:100%}.pdf-header{display:grid;grid-template-columns:1fr auto;gap:18px;align-items:center;padding:0 0 14px;border-bottom:3px solid #12bfe8}
+  .pdf-logo{width:145px;height:auto;display:block}.pdf-kicker{font-size:8pt;letter-spacing:.18em;color:#178fa9;font-weight:800;text-transform:uppercase}
+  .pdf-title{font-size:22pt;line-height:1.05;margin:5px 0 3px;color:#10211d}.pdf-sub{font-size:8.5pt;color:#63756f}
+  .pdf-code{text-align:right}.pdf-code b{font-size:9pt;letter-spacing:.12em;color:#178fa9}.pdf-code span{display:block;font-size:8pt;color:#63756f;margin-top:4px}
+  .pdf-status{margin:15px 0;padding:10px 12px;border:1px solid #cce5df;border-left:5px solid #12bfe8;border-radius:10px;background:#f3faf8}
+  .pdf-status b{font-size:9pt;color:#0d8eaa}.pdf-status span{float:right;font-weight:700;color:#233d36}
+  .pdf-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin:10px 0 16px}.pdf-field{padding:10px 11px;border:1px solid #dce8e4;border-radius:9px;background:#fff}
+  .pdf-field label{display:block;font-size:7.5pt;letter-spacing:.08em;text-transform:uppercase;color:#70837d;font-weight:700}.pdf-field strong{display:block;margin-top:3px;font-size:10pt;color:#18312a}
+  .pdf-section{margin:15px 0}.pdf-section h2{font-size:11pt;margin:0 0 7px;color:#0d7f98;display:flex;align-items:center;gap:7px}.pdf-section h2:before{content:"";width:18px;height:3px;background:#12bfe8;border-radius:9px}
+  .pdf-box{border:1px solid #dce8e4;border-radius:10px;padding:11px;background:#f8fbfa;white-space:pre-wrap;min-height:45px}
+  .pdf-table{width:100%;border-collapse:collapse;border:1px solid #dce8e4;border-radius:10px;overflow:hidden}.pdf-table th{text-align:left;font-size:7.5pt;text-transform:uppercase;letter-spacing:.06em;color:#64766f;background:#eef6f3;padding:8px}.pdf-table td{padding:8px;border-top:1px solid #e2ebe8}.pdf-total{font-size:17pt;font-weight:800;color:#0a7f98;text-align:right;margin-top:12px}
+  .pdf-footer{margin-top:25px;padding-top:10px;border-top:1px solid #dce8e4;display:flex;justify-content:space-between;gap:10px;color:#73837e;font-size:7.5pt}
+  .pdf-note{font-size:8pt;color:#60736c}.pdf-sign{margin-top:28px;display:grid;grid-template-columns:1fr 1fr;gap:30px}.pdf-sign div{border-top:1px solid #8ca29b;padding-top:6px;color:#64766f;font-size:8pt}
+  @media print{body{print-color-adjust:exact;-webkit-print-color-adjust:exact}.pdf-box,.pdf-status,.pdf-table th{print-color-adjust:exact;-webkit-print-color-adjust:exact}}
+  </style></head><body><div class="pdf">${body}<div class="pdf-footer"><span>RafahStudio • documento profissional</span><span>Gerado em ${new Date().toLocaleString('pt-BR')}</span></div></div>
+  <script>window.addEventListener('load',()=>setTimeout(()=>window.print(),350));<\/script></body></html>`);
+  w.document.close();
+}
+
+function generateOrderPDF(id){
+  const o=orders.find(x=>String(x.id)===String(id));if(!o)return;
+  const b=o.briefing||{};
+  const people=(b.people||[]).map(p=>`<tr><td>${esc(p.name)}</td><td>${esc(p.info||'—')}</td></tr>`).join('');
+  const body=`<header class="pdf-header"><div><div class="pdf-logo">${RAFahPdfLogoSvg}</div><div class="pdf-kicker">RafahStudio • documento de projeto</div><div class="pdf-title">${esc(o.project)}</div><div class="pdf-sub">${esc(designer.name||'Designer')}${designer.brand&&designer.brand!=='RafahStudio'?' • '+esc(designer.brand):''}</div></div><div class="pdf-code"><b>PEDIDO</b><span>${esc(o.id)}</span></div></header>
+  <div class="pdf-status"><b>${esc(o.status)}</b><span>${o.paid||o.status==='Pago'?'PAGAMENTO RECEBIDO':'PAGAMENTO PENDENTE'}</span></div>
+  <div class="pdf-grid"><div class="pdf-field"><label>Cliente</label><strong>${esc(o.client)}</strong></div><div class="pdf-field"><label>Serviço</label><strong>${esc(o.type)}</strong></div><div class="pdf-field"><label>Prazo</label><strong>${dateLabel(o.deadline)}</strong></div><div class="pdf-field"><label>Valor</label><strong>${money(o.value)}</strong></div></div>
+  <section class="pdf-section"><h2>Briefing</h2><div class="pdf-box">${esc(b.texts||b.notes||'Sem briefing adicional.')}</div></section>
+  ${b.refs?`<section class="pdf-section"><h2>Referências</h2><div class="pdf-box">${esc(b.refs)}</div></section>`:''}
+  ${b.notes?`<section class="pdf-section"><h2>Observações</h2><div class="pdf-box">${esc(b.notes)}</div></section>`:''}
+  ${b.people?.length?`<section class="pdf-section"><h2>Pessoas da arte</h2><table class="pdf-table"><thead><tr><th>Nome</th><th>Informação</th></tr></thead><tbody>${people}</tbody></table></section>`:''}
+  <div class="pdf-sign"><div>Cliente / responsável</div><div>${esc(designer.name||'Designer')}</div></div>`;
+  pdfWindow(`Pedido — ${o.project}`,body);
+}
+function generateQuotePDF(id){
+  const q=quotes.find(x=>String(x.id)===String(id));if(!q)return;
+  const rows=(q.items||[]).map(i=>`<tr><td>${esc(i.desc||'Serviço')}</td><td>${i.qty}</td><td>${money(i.price)}</td><td>${money((Number(i.qty)||0)*(Number(i.price)||0))}</td></tr>`).join('');
+  const body=`<header class="pdf-header"><div><div class="pdf-logo">${RAFahPdfLogoSvg}</div><div class="pdf-kicker">RafahStudio • proposta comercial</div><div class="pdf-title">${esc(q.project)}</div><div class="pdf-sub">${esc(designer.name||'Designer')}${designer.brand&&designer.brand!=='RafahStudio'?' • '+esc(designer.brand):''}</div></div><div class="pdf-code"><b>ORÇAMENTO</b><span>${esc(q.id)}</span></div></header>
+  <div class="pdf-status"><b>${esc(q.status)}</b><span>VALIDADE • ${dateLabel(q.valid)}</span></div>
+  <div class="pdf-grid"><div class="pdf-field"><label>Cliente</label><strong>${esc(q.client)}</strong></div><div class="pdf-field"><label>Projeto</label><strong>${esc(q.project)}</strong></div></div>
+  <section class="pdf-section"><h2>Itens da proposta</h2><table class="pdf-table"><thead><tr><th>Descrição</th><th>Qtd.</th><th>Unitário</th><th>Total</th></tr></thead><tbody>${rows}</tbody></table><div class="pdf-total">Total: ${money(q.total)}</div></section>
+  ${q.terms?`<section class="pdf-section"><h2>Condições</h2><div class="pdf-box">${esc(q.terms)}</div></section>`:''}
+  <div class="pdf-sign"><div>Cliente / responsável</div><div>${esc(designer.name||'Designer')}</div></div>`;
+  pdfWindow(`Orçamento — ${q.project}`,body);
+}
 
 function showUploadProgress(title='Enviando arquivo…', text='Aguarde enquanto atualizamos sua imagem.'){
   const root=$('#uploadProgress'); if(!root)return;
@@ -1450,7 +1566,23 @@ function setupEvents(){
  $('#testNotificationBtn')?.addEventListener('click',()=>{unlockNotificationAudio();playNotificationSound(true);speakNotification('Teste de notificação. Este aviso não será salvo.');showNotificationPopup('Teste de notificação','Este teste aparece somente como popup e não é salvo no histórico.');requestDesktopNotifications();});
 
  $('#globalSearch').oninput=e=>{const q=e.target.value.trim();if(q){go('pedidos');$('#orderSearch').value=q;renderOrders();}};$('#orderSearch').oninput=renderOrders;$('#orderSort').onchange=renderOrders;$('#clientSearch').oninput=renderClients;$('#catalogSearch').oninput=renderCatalog;$('#quoteSearch').oninput=renderQuotes;$('#quoteFilter').onchange=renderQuotes;['finStart','finEnd','finStatus'].forEach(id=>$('#'+id).onchange=renderFinance);$('#clearFinance').onclick=()=>{$('#finStart').value='';$('#finEnd').value='';$('#finStatus').value='all';renderFinance();};$('#copyBriefingBtn').onclick=()=>generateLink();
- $('#saveProfileBtn').onclick=async()=>{const btn=$('#saveProfileBtn');btn.disabled=true;try{designer={...designer,name:$('#dName').value.trim()||'Designer',brand:$('#dBrand').value.trim(),whats:$('#dWhats').value.trim(),email:$('#dEmail').value.trim(),insta:$('#dInsta').value.trim(),portfolio:$('#dPortfolio').value.trim(),pixType:$('#dPixType')?.value||'CPF',pixKey:$('#dPixKey')?.value.trim()||'',pixName:$('#dPixName')?.value.trim()||'',area:$('#dArea').value.trim(),bio:$('#dBio').value.trim(),photo:designer.photo||'',banner:designer.banner||''};const file=$('#profileBanner')?.files?.[0];if(file){if(file.size>8*1024*1024)throw new Error('O banner deve ter no máximo 8 MB.');if(!supabaseClient)initSupabaseClient();if(!supabaseClient)throw new Error('Não foi possível conectar ao armazenamento.');showUploadProgress('Enviando banner…','Atualizando o banner do seu perfil.');const safe=(file.name||'banner').replace(/[^a-zA-Z0-9._-]/g,'_');const path=`profile/${getOwnerToken()}/${Date.now()}-${safe}`;const {error}=await supabaseClient.storage.from('briefing-files').upload(path,file,{upsert:false,contentType:file.type||'image/jpeg'});if(error)throw error;designer.banner=supabaseClient.storage.from('briefing-files').getPublicUrl(path).data.publicUrl;updateUploadProgress(100,'Banner atualizado com sucesso.');}persist();await saveRemoteProfile();await syncPublicProfileLink(getPublicToken());renderIdentity();renderProfile();renderDashboard();if(file)hideUploadProgress(true);toast('Perfil atualizado e pronto para aparecer nos briefings.');}catch(err){hideUploadProgress(false);toast(err?.message||'Não foi possível salvar o perfil.','error');}finally{btn.disabled=false;}};$('#profilePhoto').onchange=async e=>{const f=e.target.files[0];if(!f)return;if(f.size>4*1024*1024){toast('Escolha uma foto de até 4 MB.','error');e.target.value='';return;}showUploadProgress('Atualizando foto…','Carregando a foto do seu perfil.');try{designer.photo=await new Promise((res,rej)=>{const r=new FileReader();r.onprogress=ev=>{if(ev.lengthComputable)updateUploadProgress(Math.max(10,(ev.loaded/ev.total)*90),'Carregando a foto do perfil…');};r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(f);});updateUploadProgress(100,'Foto atualizada com sucesso.');persist();await saveRemoteProfile();renderIdentity();renderProfile();hideUploadProgress(true);}catch(err){hideUploadProgress(false);toast('Não foi possível atualizar a foto.','error');}finally{e.target.value='';}};$('#exportBackupBtn').onclick=exportBackup;$('#importBackup').onchange=e=>{if(e.target.files[0])importBackup(e.target.files[0]);};
+ $('#saveProfileBtn').onclick=async()=>{const btn=$('#saveProfileBtn');btn.disabled=true;try{designer={...designer,name:$('#dName').value.trim()||'Designer',brand:$('#dBrand').value.trim(),whats:$('#dWhats').value.trim(),email:$('#dEmail').value.trim(),insta:$('#dInsta').value.trim(),portfolio:$('#dPortfolio').value.trim(),pixType:$('#dPixType')?.value||'CPF',pixKey:$('#dPixKey')?.value.trim()||'',pixName:$('#dPixName')?.value.trim()||'',area:$('#dArea').value.trim(),bio:$('#dBio').value.trim(),photo:designer.photo||'',banner:designer.banner||''};const file=$('#profileBanner')?.files?.[0];if(file){if(file.size>8*1024*1024)throw new Error('O banner deve ter no máximo 8 MB.');if(!supabaseClient)initSupabaseClient();if(!supabaseClient)throw new Error('Não foi possível conectar ao armazenamento.');showUploadProgress('Enviando banner…','Atualizando o banner do seu perfil.');const safe=(file.name||'banner').replace(/[^a-zA-Z0-9._-]/g,'_');const path=`profile/${getOwnerToken()}/${Date.now()}-${safe}`;const {error}=await supabaseClient.storage.from('briefing-files').upload(path,file,{upsert:false,contentType:file.type||'image/jpeg'});if(error)throw error;designer.banner=supabaseClient.storage.from('briefing-files').getPublicUrl(path).data.publicUrl;updateUploadProgress(100,'Banner atualizado com sucesso.');}persist();await saveRemoteProfile();await syncPublicProfileLink(getPublicToken());renderIdentity();renderProfile();renderDashboard();if(file)hideUploadProgress(true);toast('Perfil atualizado e pronto para aparecer nos briefings.');}catch(err){hideUploadProgress(false);toast(err?.message||'Não foi possível salvar o perfil.','error');}finally{btn.disabled=false;}};$('#profilePhoto').onchange=async e=>{
+  const f=e.target.files[0];if(!f)return;
+  if(f.size>4*1024*1024){toast('Escolha uma foto de até 4 MB.','error');e.target.value='';return;}
+  try{
+    showUploadProgress('Atualizando foto…','Enviando a foto do perfil.');
+    if(!supabaseClient)initSupabaseClient();
+    if(!supabaseClient)throw new Error('Supabase não está disponível.');
+    const safe=(f.name||'perfil').replace(/[^a-zA-Z0-9._-]/g,'_');
+    const path=`profile/${getOwnerToken()}/${Date.now()}-${safe}`;
+    const {error}=await supabaseClient.storage.from('briefing-files').upload(path,f,{upsert:false,contentType:f.type||'image/jpeg'});
+    if(error)throw error;
+    designer.photo=supabaseClient.storage.from('briefing-files').getPublicUrl(path).data.publicUrl;
+    updateUploadProgress(100,'Foto atualizada com sucesso.');
+    persist();await saveRemoteProfile();await syncPublicProfileLink(getPublicToken());renderIdentity();renderProfile();hideUploadProgress(true);
+  }catch(err){hideUploadProgress(false);toast(err?.message||'Não foi possível atualizar a foto.','error');}
+  finally{e.target.value='';}
+};$('#exportBackupBtn').onclick=exportBackup;$('#importBackup').onchange=e=>{if(e.target.files[0])importBackup(e.target.files[0]);};
  let draggedOrderId=null;
  $('#ordersTable').addEventListener('dragstart',e=>{const card=e.target.closest('[data-drag-order]');if(!card)return;draggedOrderId=card.dataset.dragOrder;card.classList.add('is-dragging');e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',draggedOrderId);});
  $('#ordersTable').addEventListener('dragend',e=>{const card=e.target.closest('[data-drag-order]');card?.classList.remove('is-dragging');$$('.order-stage.is-drop-target').forEach(x=>x.classList.remove('is-drop-target'));draggedOrderId=null;});
@@ -1463,23 +1595,20 @@ function handleDelegated(e){const a=e.target.closest('[data-action]');if(a){cons
  const page=e.target.closest('[data-page-link]');if(page)go(page.dataset.pageLink);
  const open=e.target.closest('[data-open-order]');if(open)openOrderView(open.dataset.openOrder);
  const edit=e.target.closest('[data-edit-order]');if(edit){const order=orders.find(o=>o.id===edit.dataset.editOrder);if(order)openOrder(order);}
- const editOrderClient=e.target.closest('[data-edit-order-client]');if(editOrderClient){const order=orders.find(o=>o.id===editOrderClient.dataset.editOrderClient);if(order){const c=clients.find(x=>String(x.name).toLowerCase()===String(order.client).toLowerCase());closeModal();openClientForm(c||{name:order.client});}}
  const del=e.target.closest('[data-delete-order]');if(del)deleteOrder(del.dataset.deleteOrder);
  const trashBtn=e.target.closest('[data-open-trash]');if(trashBtn)openTrash();
  const restore=e.target.closest('[data-restore-order]');if(restore)restoreOrder(restore.dataset.restoreOrder);
  const purge=e.target.closest('[data-purge-trash]');if(purge)purgeTrash(purge.dataset.purgeTrash);
- const pdf=e.target.closest('[data-order-pdf]');if(pdf)generateOrderPDF(pdf.dataset.orderPdf);
+ const pdf=e.target.closest('[data-order-pdf]');if(pdf)generateOrderPDF(pdf.dataset.orderPdf); const hist=e.target.closest('[data-open-history]');if(hist){openOrderHistory(hist.dataset.openHistory);return;}
  const paid=e.target.closest('[data-toggle-paid]');if(paid){togglePaid(paid.dataset.togglePaid);if($('#modalRoot').innerHTML)openOrderView(paid.dataset.togglePaid);}
  const share=e.target.closest('[data-share-tracking]');if(share){shareOrderTracking(share.dataset.shareTracking);return;}
- const sendArt=e.target.closest('[data-send-tracking-art]');if(sendArt){sendTrackingArtUpdate(sendArt.dataset.sendTrackingArt);return;}
- const openChat=e.target.closest('[data-open-tracking-chat]');if(openChat){openTrackingChatModal(openChat.dataset.openTrackingChat);return;}
- const openConversation=e.target.closest('[data-open-conversation]');if(openConversation){openConversationForClient(openConversation.dataset.openConversation);return;}
+ const sendArt=e.target.closest('[data-send-tracking-art]');if(sendArt){sendTrackingArtUpdate(sendArt.dataset.sendTrackingArt);return;} const openConversation=e.target.closest('[data-open-conversation]');if(openConversation){openConversationForClient(openConversation.dataset.openConversation);return;}
  const move=e.target.closest('[data-move-status]');if(move&&!move.disabled){moveStatus(move.dataset.moveStatus,Number(move.dataset.direction)||1);}
  const cyc=e.target.closest('[data-cycle-status]');if(cyc)cycleStatus(cyc.dataset.cycleStatus);
  const delC=e.target.closest('[data-delete-client]');if(delC){deleteClient(delC.dataset.deleteClient);return;}
  const editCat=e.target.closest('[data-edit-catalog]');if(editCat){const item=catalog.find(x=>String(x.id)===String(editCat.dataset.editCatalog));if(item)openCatalogForm(item);return;}
  const delCat=e.target.closest('[data-delete-catalog]');if(delCat){deleteCatalogItem(delCat.dataset.deleteCatalog);return;}
- const addCat=e.target.closest('[data-add-catalog-order]');if(addCat){const order=orders.find(x=>x.id===addCat.dataset.addCatalogOrder);if(order)openCatalogForm(null,order);return;}
+ const addCat=e.target.closest('[data-add-catalog-order]');if(addCat){addApprovedArtToCatalog(addCat.dataset.addCatalogOrder);return;}
  const editC=e.target.closest('[data-edit-client]');if(editC){const c=clients.find(x=>x.id===editC.dataset.editClient);if(c){closeModal();openClientForm(c);}}
  const viewC=e.target.closest('[data-view-client]');if(viewC)viewClient(viewC.dataset.viewClient);
  const wa=e.target.closest('[data-whatsapp]');if(wa){const n=String(wa.dataset.whatsapp).replace(/\D/g,'');window.open(`https://wa.me/${n.startsWith('55')?n:'55'+n}`,'_blank','noopener');}

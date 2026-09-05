@@ -890,3 +890,22 @@ body{background:
     padding:6px!important;
   }
 }
+
+/* RAFahStudio 1.5 — limpeza visual, cartões de pedidos e PDF */
+.order-stage-body{display:grid!important;grid-auto-rows:max-content!important;align-content:start!important;gap:12px!important;}
+.order-card{display:flex!important;flex-direction:column!important;gap:0!important;min-height:0!important;height:auto!important;box-sizing:border-box!important;overflow:hidden!important;}
+.order-card-art-featured{flex:0 0 auto!important;position:relative!important;display:block!important;width:100%!important;min-height:140px!important;height:150px!important;overflow:hidden!important;}
+.order-card-art-featured img{display:block!important;width:100%!important;height:100%!important;object-fit:contain!important;background:#07110f!important;}
+.order-card-actions{margin-top:auto!important;padding-top:10px!important;}
+.tracking-designer-avatar{width:25px;height:25px;border-radius:9px;display:inline-grid;place-items:center;overflow:hidden;background:linear-gradient(135deg,#1556ff,#08c8ff);color:#fff;font-size:8px;font-weight:800;border:1px solid rgba(85,232,255,.2);}
+.tracking-designer-avatar img{width:100%;height:100%;object-fit:cover;}
+.history-modal-list{display:grid;gap:10px;max-height:58vh;overflow:auto;padding:4px;}
+.history-row{display:grid;grid-template-columns:8px 1fr;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.018);}
+.history-row>span{width:8px;height:8px;border-radius:50%;background:var(--accent);margin-top:5px;box-shadow:0 0 12px rgba(85,232,255,.25);}
+.history-row b,.history-row small{display:block}.history-row b{font-size:11px}.history-row small{font-size:9px;color:var(--muted);margin-top:3px;}
+.order-history-summary{background:linear-gradient(135deg,rgba(8,200,255,.035),rgba(255,255,255,.015));}
+@media(max-width:600px){
+  .order-stage-body{gap:10px!important;}
+  .order-card-art-featured{height:155px!important;min-height:155px!important;}
+  .tracking-designer-avatar{width:23px;height:23px;}
+}

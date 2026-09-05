@@ -1,7 +1,6 @@
 -- RAFAHSTUDIO — BRIEFING ONLINE
 -- Execute este arquivo inteiro no Supabase > SQL Editor.
 
-create extension if not exists pgcrypto;
 
 create table if not exists public.briefing_links (
   public_token text primary key,
@@ -91,7 +90,8 @@ begin
   if v_owner_secret is null then raise exception 'Link de briefing inválido ou expirado'; end if;
   insert into public.briefings(id,owner_secret,client_name,whatsapp,project_name,deadline,service_type,texts,people,references_text,notes,files)
   values(p_briefing_id,v_owner_secret,trim(p_client_name),trim(p_whatsapp),trim(p_project_name),p_deadline,p_service_type,p_texts,coalesce(p_people,'[]'::jsonb),p_references_text,p_notes,coalesce(p_files,'[]'::jsonb));
-  v_tracking_token := encode(gen_random_bytes(24),'hex');
+  v_tracking_token := md5(random()::text || clock_timestamp()::text || p_briefing_id::text)
+                     || md5(random()::text || clock_timestamp()::text || v_owner_secret);
   insert into public.order_tracking(tracking_token,owner_secret,order_id,public_token,client_name,project_name,service_type,deadline,status,value)
   values(v_tracking_token,v_owner_secret,p_briefing_id::text,p_public_token,trim(p_client_name),trim(p_project_name),trim(p_service_type),p_deadline,'Novo',0);
   return jsonb_build_object('briefing_id',p_briefing_id,'tracking_token',v_tracking_token);
@@ -364,9 +364,11 @@ create table if not exists public.briefing_public_profiles (
   portfolio text not null default '',
   email text not null default '',
   banner text not null default '',
+  photo text not null default '',
   updated_at timestamptz not null default now()
 );
 
+alter table public.briefing_public_profiles add column if not exists photo text not null default '';
 alter table public.briefing_public_profiles add column if not exists pix_type text not null default 'CPF';
 alter table public.briefing_public_profiles add column if not exists pix_key text not null default '';
 alter table public.briefing_public_profiles add column if not exists pix_name text not null default '';
@@ -377,6 +379,7 @@ drop policy if exists "briefing_public_profiles_no_direct_select" on public.brie
 
 drop function if exists public.save_public_profile_link(text,text,text,text,text,text,text);
 drop function if exists public.save_public_profile_link(text,text,text,text,text,text,text,text);
+drop function if exists public.save_public_profile_link(text,text,text,text,text,text,text,text,text,text,text,text);
 drop function if exists public.save_public_profile_link(text,text,text,text,text,text,text,text,text,text,text);
 
 create or replace function public.save_public_profile_link(
@@ -388,6 +391,7 @@ create or replace function public.save_public_profile_link(
   p_portfolio text,
   p_email text,
   p_banner text,
+  p_photo text,
   p_pix_type text,
   p_pix_key text,
   p_pix_name text
@@ -401,8 +405,8 @@ declare v_owner_secret text;
 begin
   select owner_secret into v_owner_secret from public.briefing_links where public_token=p_public_token;
   if v_owner_secret is null or v_owner_secret <> p_owner_secret then raise exception 'Acesso ao link não autorizado'; end if;
-  insert into public.briefing_public_profiles(public_token,name,whatsapp,instagram,portfolio,email,banner,pix_type,pix_key,pix_name)
-  values(p_public_token,coalesce(nullif(trim(p_name),''),'Designer'),coalesce(trim(p_whatsapp),''),coalesce(trim(p_instagram),''),coalesce(trim(p_portfolio),''),coalesce(trim(p_email),''),coalesce(trim(p_banner),''),coalesce(trim(p_pix_type),'CPF'),coalesce(trim(p_pix_key),''),coalesce(trim(p_pix_name),''))
+  insert into public.briefing_public_profiles(public_token,name,whatsapp,instagram,portfolio,email,banner,photo,pix_type,pix_key,pix_name)
+  values(p_public_token,coalesce(nullif(trim(p_name),''),'Designer'),coalesce(trim(p_whatsapp),''),coalesce(trim(p_instagram),''),coalesce(trim(p_portfolio),''),coalesce(trim(p_email),''),coalesce(trim(p_banner),''),coalesce(trim(p_photo),''),coalesce(trim(p_pix_type),'CPF'),coalesce(trim(p_pix_key),''),coalesce(trim(p_pix_name),''))
   on conflict(public_token) do update set
     name=excluded.name,whatsapp=excluded.whatsapp,instagram=excluded.instagram,
     portfolio=excluded.portfolio,email=excluded.email,banner=excluded.banner,
@@ -410,18 +414,20 @@ begin
 end;
 $$;
 
+drop function if exists public.get_public_profile_for_token(text);
 create or replace function public.get_public_profile_for_token(p_public_token text)
-returns table(name text,whatsapp text,instagram text,portfolio text,email text,banner text)
+returns table(name text,whatsapp text,instagram text,portfolio text,email text,banner text,photo text)
 language sql
 security definer
 set search_path = public
 as $$
-  select p.name,p.whatsapp,p.instagram,p.portfolio,p.email,p.banner
+  select p.name,p.whatsapp,p.instagram,p.portfolio,p.email,p.banner,p.photo
   from public.briefing_public_profiles p
   where p.public_token=p_public_token;
 $$;
 
-grant execute on function public.save_public_profile_link(text,text,text,text,text,text,text,text,text,text,text) to authenticated;
+
+grant execute on function public.save_public_profile_link(text,text,text,text,text,text,text,text,text,text,text,text) to authenticated;
 grant execute on function public.get_public_profile_for_token(text) to anon,authenticated;
 
 -- O estado Finalizado é usado depois do pagamento para indicar que o projeto
