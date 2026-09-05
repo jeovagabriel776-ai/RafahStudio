@@ -35,7 +35,7 @@ let supabaseClient = null;
 function initSupabaseClient(){
   try{
     if(!window.supabase?.createClient){
-      console.error('[RafahStudio] Biblioteca Supabase não encontrada.');
+      console.error('[RafahStudio] Supabase library not found.');
       return false;
     }
     supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
@@ -394,7 +394,11 @@ async function syncOnlineBriefings(){
       return true;
     });
 
-    if(changed){persist();if(!document.hidden)renderSoon();}
+    if(changed){
+      persist();
+      renderNotifications();
+      if(!document.hidden)renderSoon();
+    }
   }catch(err){
     console.error('RafahStudio Supabase:',err);
   }finally{
@@ -601,7 +605,7 @@ async function showDesktopNotification(title,body,tag='rafahstudio'){
   const options={body,icon:'assets/logo2.svg',badge:'assets/logo2.svg',tag,renotify:true,data:{url:location.href.split('#')[0]}};
   try{
     if('serviceWorker' in navigator){
-      const reg=await navigator.serviceWorker.getRegistration();
+      const reg=await navigator.serviceWorker.ready;
       if(reg && typeof reg.showNotification==='function'){
         await reg.showNotification(title,options);
         return;
@@ -626,6 +630,7 @@ function render(){
   // (pedidos, clientes, catálogo, orçamento, financeiro e perfil), o que ficava caro
   // principalmente no celular.
   renderIdentity();
+  renderNotifications();
   switch(currentPage){
     case 'pedidos': renderOrders(); break;
     case 'clientes': renderClients(); break;

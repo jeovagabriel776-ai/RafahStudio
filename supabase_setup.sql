@@ -44,13 +44,21 @@ language plpgsql
 security definer
 set search_path = public
 as $$
+declare v_existing_owner text;
 begin
   if length(coalesce(p_public_token,'')) < 20 or length(coalesce(p_owner_secret,'')) < 20 then
     raise exception 'Token inválido';
   end if;
+  select owner_secret into v_existing_owner
+  from public.briefing_links
+  where public_token = p_public_token
+  for update;
+  if v_existing_owner is not null and v_existing_owner <> p_owner_secret then
+    raise exception 'Este link já pertence a outro workspace';
+  end if;
   insert into public.briefing_links(public_token, owner_secret)
   values (p_public_token, p_owner_secret)
-  on conflict (public_token) do update set owner_secret = excluded.owner_secret;
+  on conflict (public_token) do nothing;
 end;
 $$;
 
@@ -501,6 +509,7 @@ begin
   select * into t from public.order_tracking where tracking_token=p_tracking_token limit 1;
   if t.tracking_token is null then raise exception 'Pedido não encontrado.'; end if;
   if length(trim(coalesce(p_message,'')))<3 then raise exception 'Descreva a alteração.'; end if;
+  if t.status in ('Pago','Finalizado') then raise exception 'Este pedido já foi finalizado.'; end if;
   insert into public.order_tracking_events(tracking_token,owner_secret,order_id,author,kind,message)
   values(t.tracking_token,t.owner_secret,t.order_id,'client','alteration',trim(p_message)) returning id into v_id;
   update public.order_tracking set status='Alteração',updated_at=now() where tracking_token=p_tracking_token;
@@ -514,6 +523,7 @@ declare t public.order_tracking%rowtype; v_id bigint;
 begin
   select * into t from public.order_tracking where tracking_token=p_tracking_token limit 1;
   if t.tracking_token is null then raise exception 'Pedido não encontrado.'; end if;
+  if t.status in ('Entregue','Pago','Finalizado') then raise exception 'Este pedido já foi aprovado.'; end if;
   insert into public.order_tracking_events(tracking_token,owner_secret,order_id,author,kind,message)
   values(t.tracking_token,t.owner_secret,t.order_id,'client','approval',coalesce(nullif(trim(p_message),''),'Arte aprovada pelo cliente.')) returning id into v_id;
   update public.order_tracking set status='Entregue',updated_at=now() where tracking_token=p_tracking_token;
