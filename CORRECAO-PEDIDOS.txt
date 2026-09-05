@@ -1,6 +1,0 @@
-Correção aplicada:
-- Novo pedido manual agora é inserido de verdade na lista de pedidos.
-- Corrigido bug em que somente o cliente era criado e o pedido desaparecia.
-- Foto da pessoa ganha pré-visualização antes de salvar.
-- Após salvar, a foto enviada ao Supabase aparece nos detalhes do pedido.
-- Nenhuma alteração de SQL/Supabase é necessária para esta correção.
