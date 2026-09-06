@@ -1488,10 +1488,11 @@ async function loadPublicTracking(opts={}){
   finally{if(!opts.silent)loading?.classList.add('hidden');}
 }
 function setupTracking(){
-  loadPublicTracking();
+  const currentToken=(()=>{try{return decodeURIComponent(location.hash.slice('#pedido='.length));}catch{return ''}})();
+  if(currentToken) loadPublicTracking();
   $('#trackingChangeBtn')?.addEventListener('click',submitPublicAlteration);
   $('#trackingApproveBtn')?.addEventListener('click',submitPublicApproval);
-  $('#trackingNewOrderBtn')?.addEventListener('click',e=>{const href=e.currentTarget.getAttribute('href');if(href&&href!=='#'){e.preventDefault();location.hash=href.slice(1);showPublicShell();setupPublic();$('#trackingPage')?.classList.add('hidden');$('#publicPage')?.classList.remove('hidden');loadPublicProfile();}});
+  $('#trackingNewOrderBtn')?.addEventListener('click',e=>{const href=e.currentTarget.getAttribute('href');if(href&&href!=='#'){e.preventDefault();location.hash=href.slice(1);showPublicShell('briefing');loadPublicProfile();}});
   $('#trackingChatForm')?.addEventListener('submit',e=>{e.preventDefault();submitPublicMessage();});
   $('#trackingChatText')?.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();submitPublicMessage();}});
   $('#trackingChatFile')?.addEventListener('change',e=>setChatFilePreview(e.target,'#trackingChatFileLabel',e.target.files?.[0]));
@@ -1556,7 +1557,7 @@ function openPublicCatalogPreview(found){
   $('#pubFiles').addEventListener('change',async e=>{const fs=await readFiles(e.target.files);$('#filePreview').innerHTML=fs.map(f=>`<span>${esc(f.name)} <small>${formatBytes(f.size)}</small></span>`).join('');$('#pubFiles')._files=fs;});
   $('#briefingForm').onsubmit=async e=>{e.preventDefault();if(!supabaseClient)initSupabaseClient();if(!supabaseClient){$('#publicMessage').textContent='Não foi possível conectar ao servidor. Verifique sua internet e atualize a página.';return;}const publicToken=briefingTokenFromHash();if(!publicToken){$('#publicMessage').textContent='Link de briefing inválido ou expirado. Solicite um novo link ao designer.';return;}const files=$('#pubFiles')._files||[];const persons=people.map(p=>({name:p.name,info:p.info,photo:p.photo?{name:p.photo.name,type:p.photo.type,size:p.photo.size}:null}));const catalogText=selectedCatalog.length?`Referências do catálogo: ${selectedCatalog.map(x=>x.title).join(', ')}`:'';const refsBase=$('#pubRefs').value.trim();const combinedRefs=[catalogText,refsBase].filter(Boolean).join('\n\n');const d={client:$('#pubName').value.trim(),whats:$('#pubWhats').value.trim(),project:$('#pubProject').value.trim(),deadline:$('#pubEvent').value,type:$('#pubType').value,texts:$('#pubTexts').value,people:persons,refs:combinedRefs,notes:$('#pubNotes').value};if(!d.client||!d.project){$('#publicMessage').textContent='Nome e projeto são obrigatórios.';return;}const btn=$('#briefingForm button[type="submit"]');if(btn){btn.disabled=true;btn.textContent='Enviando…';}try{const briefingId=crypto.randomUUID?.()||uid('brief');const uploaded=[];for(let i=0;i<files.length;i++){if(files[i].file)uploaded.push(await uploadBriefingFile(files[i].file,publicToken,briefingId,i));}for(let i=0;i<people.length;i++){if(people[i].photo?.file){const up=await uploadBriefingFile(people[i].photo.file,publicToken,briefingId,`p${i}`);d.people[i].photo=up;}}const {data:submitData,error}=await supabaseClient.rpc('submit_briefing',{p_public_token:publicToken,p_briefing_id:briefingId,p_client_name:d.client,p_whatsapp:d.whats,p_project_name:d.project,p_deadline:d.deadline||null,p_service_type:d.type,p_texts:d.texts,p_people:d.people,p_references_text:d.refs,p_notes:d.notes,p_files:uploaded});if(error)throw error;const trackingToken=submitData?.tracking_token||submitData?.trackingToken||'';$('#publicFormView').classList.add('hidden');$('#publicSuccess').classList.remove('hidden');$('#successProject').textContent=d.project;const trackBtn=$('#successTrackingBtn');if(trackBtn){trackBtn.href=trackingToken?`#pedido=${encodeURIComponent(trackingToken)}`:'#';trackBtn.classList.toggle('disabled',!trackingToken);trackBtn.dataset.trackingToken=trackingToken;}loadPublicProfile();window.scrollTo({top:0,behavior:'smooth'});}catch(err){console.error(err);$('#publicMessage').textContent=`Não foi possível enviar. ${err?.message||'Tente novamente.'}`;if(btn){btn.disabled=false;btn.textContent='Enviar briefing →';}}};
   $('#newPublicOrderBtn').onclick=()=>{ $('#publicSuccess').classList.add('hidden');$('#publicFormView').classList.remove('hidden');$('#briefingForm').reset();people=[];selectedCatalog=[];paintPeople();$('#filePreview').innerHTML='';$('#pubFiles')._files=[];$('#publicMessage').textContent='';const btn=$('#briefingForm button[type="submit"]');if(btn){btn.disabled=false;btn.textContent='Enviar briefing →';}loadPublicProfile();window.scrollTo({top:0,behavior:'smooth'});};
-  $('#successTrackingBtn')?.addEventListener('click',e=>{const href=e.currentTarget.getAttribute('href');if(!href||href==='#')return;e.preventDefault();location.hash=href.slice(1);showPublicShell();setupPublic();$('#publicPage')?.classList.add('hidden');$('#trackingPage')?.classList.remove('hidden');loadPublicTracking();});
+  $('#successTrackingBtn')?.addEventListener('click',e=>{const href=e.currentTarget.getAttribute('href');if(!href||href==='#')return;e.preventDefault();location.hash=href.slice(1);showPublicShell('tracking');loadPublicTracking();});
   paintPeople();loadPublicProfile();
 }
 function exportBackup(){const payload={version:2,exportedAt:new Date().toISOString(),designer,orders,clients,quotes,notifications};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});downloadBlob(blob,`rafahstudio-backup-${todayISO()}.json`);toast('Backup exportado.');}
@@ -1760,51 +1761,66 @@ async function registerServiceWorker(){
   if(!('serviceWorker' in navigator)||location.protocol==='file:')return;
   try{await navigator.serviceWorker.register('./sw.js');}catch(e){console.warn('Service Worker:',e);}
 }
-function showPublicShell(){
-  // Rotas públicas NUNCA dependem da sessão do designer.
-  // O HTML começa com a tela de login visível e a publicPage oculta;
-  // por isso precisamos inverter explicitamente o shell antes de carregar
-  // o briefing/acompanhamento.
+function showPublicShell(mode='briefing'){
+  // Área pública é completamente independente do login do designer.
   $('#authScreen')?.classList.add('hidden');
   $('#app')?.classList.add('hidden');
-  $('#publicPage')?.classList.remove('hidden');
-  $('#trackingPage')?.classList.add('hidden');
   document.body.classList.add('dark');
+  if(mode==='tracking'){
+    $('#publicPage')?.classList.add('hidden');
+    $('#trackingPage')?.classList.remove('hidden');
+  }else{
+    $('#trackingPage')?.classList.add('hidden');
+    $('#publicPage')?.classList.remove('hidden');
+  }
 }
-
-async function init(){
-  // Public links are completely independent from the designer login.
-  // Handle them before booting the private workspace so a missing/expired
-  // Auth session can never replace a valid public briefing/tracking screen.
-  if(isPublicHashRoute()){
-    showPublicShell();
-    setupPublic();
-    setupTracking();
-    registerServiceWorker();
-    if(location.hash.startsWith('#briefing=')){
-      $('#trackingPage')?.classList.add('hidden');
-      await loadPublicProfile();
-      return;
-    }
+function publicRoute(){
+  const h=String(location.hash||'');
+  if(h.startsWith('#briefing='))return 'briefing';
+  if(h.startsWith('#pedido='))return 'tracking';
+  return '';
+}
+let publicUiReady=false;
+function ensurePublicUi(){
+  if(publicUiReady)return;
+  setupPublic();
+  setupTracking();
+  publicUiReady=true;
+}
+async function renderPublicRoute(){
+  const route=publicRoute();
+  if(!route)return false;
+  // Never initialize the private workspace for a public client route.
+  showPublicShell(route);
+  ensurePublicUi();
+  if(route==='briefing'){
+    $('#publicFormView')?.classList.remove('hidden');
+    $('#publicSuccess')?.classList.add('hidden');
+    $('#trackingPage')?.classList.add('hidden');
+    await loadPublicProfile();
+  }else{
     $('#publicPage')?.classList.add('hidden');
     $('#trackingPage')?.classList.remove('hidden');
     await loadPublicTracking();
+  }
+  return true;
+}
+
+async function init(){
+  if(await renderPublicRoute()){
+    registerServiceWorker();
     return;
   }
 
-  setupEvents();setupPublic();setupTracking();setupConversations();registerServiceWorker();document.body.classList.add('dark');
+  setupEvents();
+  setupConversations();
+  // Do not initialize the public form until it is actually opened.
+  registerServiceWorker();
+  document.body.classList.add('dark');
   if(!supabaseClient)initSupabaseClient();
   try{
-    let {data}=await supabaseClient.auth.getSession();
-    let session=data?.session||null;
-    if(!session){
-      try{
-        const refreshed=await supabaseClient.auth.refreshSession();
-        session=refreshed?.data?.session||null;
-      }catch(refreshErr){
-        console.warn('[RafahStudio] Renovação da sessão:',refreshErr);
-      }
-    }
+    const {data}=await supabaseClient.auth.getSession();
+    const session=data?.session||null;
     if(session?.user){
       await establishAuthenticatedUser(session.user);
       showApp();
@@ -1812,13 +1828,10 @@ async function init(){
       return;
     }
   }catch(e){console.warn('[RafahStudio] Sessão:',e);}
-  // Só tentamos o cache do usuário quando o Supabase realmente não devolveu
-  // uma sessão. Nunca usamos esse cache para acessar dados protegidos sozinho.
   currentUser=read(KEYS.user,null);
   showAuth('login');
 }
 
-// Mantém o cache de usuário sincronizado quando o Supabase renova ou encerra a sessão.
 function bindAuthState(){
   if(!supabaseClient?.auth?.onAuthStateChange)return;
   supabaseClient.auth.onAuthStateChange((event,session)=>{
@@ -1834,6 +1847,7 @@ function bindAuthState(){
   });
 }
 
+window.addEventListener('hashchange',()=>{ renderPublicRoute().catch(e=>console.error('[RafahStudio] Rota pública:',e)); });
 bindAuthState();
 init();
 
