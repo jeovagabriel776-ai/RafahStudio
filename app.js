@@ -1119,11 +1119,13 @@ async function saveOrder(existing,peopleDraft=[],readyArtDraft=null){
     else if(readyArtDraft)data.readyArt=readyArtDraft;
     if(hasUploads)updateUploadProgress(92,'Salvando o pedido…');
     if(existing){
+      existing.paperNumber ??= getOrderPaperNumber(existing, orders);
       Object.assign(existing,data);
+      existing.paperNumber ??= getOrderPaperNumber(existing, orders);
       if(existing.status==='Pago'||existing.status==='Finalizado')existing.paid=true;
       if(was!==existing.status)addHistory(existing,`Status alterado de ${was} para ${existing.status}`);
     }else{
-      const o={id:orderId,...data,created:todayISO(),history:[]};
+      const o={id:orderId,...data,created:todayISO(),history:[],paperNumber:getOrderPaperNumber({id:orderId,created:todayISO()}, orders)};
       addHistory(o,'Pedido criado');
       orders.unshift(o);
       notify('Novo pedido criado',`${data.project} • ${data.client}`,'success','pedidos',o.id);
@@ -1136,6 +1138,24 @@ async function saveOrder(existing,peopleDraft=[],readyArtDraft=null){
   finally{if(btn){btn.disabled=false;btn.textContent='Salvar pedido';}}
 }
 function addHistory(o,text){o.history=o.history||[];o.history.unshift({id:uid('hist'),at:new Date().toISOString(),text});}
+function getOrderPaperNumber(order, list=orders){
+  const raw = order?.paperNumber ?? order?.orderNumber ?? order?.number;
+  if (raw !== undefined && raw !== null && String(raw).trim() !== '') {
+    const value = String(raw).trim();
+    return /^\d+$/.test(value) ? value.padStart(4,'0') : value;
+  }
+  const index = [...(Array.isArray(list)?list:[])].sort((a,b)=>new Date(a.created||0)-new Date(b.created||0)).findIndex(x=>String(x.id)===String(order?.id));
+  return String(index >= 0 ? index + 1 : 1).padStart(4,'0');
+}
+function getQuotePaperNumber(quote, list=quotes){
+  const raw = quote?.paperNumber ?? quote?.orderNumber ?? quote?.number;
+  if (raw !== undefined && raw !== null && String(raw).trim() !== '') {
+    const value = String(raw).trim();
+    return /^\d+$/.test(value) ? value.padStart(4,'0') : value;
+  }
+  const index = [...(Array.isArray(list)?list:[])].sort((a,b)=>new Date(a.created||0)-new Date(b.created||0)).findIndex(x=>String(x.id)===String(quote?.id));
+  return String(index >= 0 ? index + 1 : 1).padStart(4,'0');
+}
 function openOrderView(id){
   const o=orders.find(x=>x.id===id); if(!o)return;
   const b=o.briefing||{};
@@ -1322,7 +1342,28 @@ async function syncPublicProfileLink(token=getPublicToken()){
 function copyText(text){navigator.clipboard?.writeText(text).then(()=>toast('Link copiado.')).catch(()=>{const ta=document.createElement('textarea');ta.value=text;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();toast('Link copiado.');});}
 function openPublic(){ $('#authScreen').classList.add('hidden');$('#app').classList.add('hidden');$('#trackingPage').classList.add('hidden');$('#publicPage').classList.remove('hidden'); }
 function openTrackingPublic(){ $('#authScreen').classList.add('hidden');$('#app').classList.add('hidden');$('#publicPage').classList.add('hidden');$('#trackingPage').classList.remove('hidden'); loadPublicTracking(); }
-function navigateHash(hash){ const clean=String(hash||'').replace(/^#/,''); if(!clean)return; history.pushState({rafah:true},'',`#${clean}`); handlePublicHash(); }
+function isPublicHashRoute(){
+  const hash=String(location.hash||'');
+  return hash.startsWith('#briefing=') || hash.startsWith('#pedido=');
+}
+function normalizeHashTarget(hash){
+  const raw=String(hash||'').trim();
+  if(!raw)return '';
+  if(raw.startsWith('#'))return raw;
+  if(raw.startsWith('http://')||raw.startsWith('https://')){
+    try{
+      const url=new URL(raw);
+      return url.hash || '';
+    }catch{return ''}
+  }
+  return `#${raw}`;
+}
+function navigateHash(hash){
+  const clean=normalizeHashTarget(hash);
+  if(!clean)return;
+  history.pushState({rafah:true},'',clean);
+  handlePublicHash();
+}
 function handlePublicHash(){const isBriefing=location.hash.startsWith('#briefing=');const isTracking=location.hash.startsWith('#pedido=');if(isTracking){openTrackingPublic();return true;}if(isBriefing){openPublic();loadPublicProfile();return true;}return false;}
 async function readFiles(fileList){const arr=[];for(const f of [...fileList]){if(f.size>8*1024*1024){toast(`${f.name} é maior que 8 MB e não foi anexado.`,'error');continue;}arr.push({id:uid('file'),name:f.name,type:f.type,size:f.size,previewUrl:URL.createObjectURL(f),file:f});}return arr;}
 let publicProfileCache={};
@@ -1505,7 +1546,7 @@ function pdfWindow(title,body){
   *{box-sizing:border-box}html,body{margin:0;padding:0;background:#fff;color:#16231f}
   body{font-family:Arial,Helvetica,sans-serif;font-size:10.5pt;line-height:1.45}
   .pdf{width:100%}.pdf-header{display:grid;grid-template-columns:1fr auto;gap:18px;align-items:center;padding:0 0 14px;border-bottom:3px solid #12bfe8}
-  .pdf-logo{width:145px;height:auto;display:block}.pdf-kicker{font-size:8pt;letter-spacing:.18em;color:#178fa9;font-weight:800;text-transform:uppercase}
+  .pdf-logo{width:118px;height:auto;display:block;max-height:44px}.pdf-kicker{font-size:8pt;letter-spacing:.18em;color:#178fa9;font-weight:800;text-transform:uppercase}
   .pdf-title{font-size:22pt;line-height:1.05;margin:5px 0 3px;color:#10211d}.pdf-sub{font-size:8.5pt;color:#63756f}
   .pdf-code{text-align:right}.pdf-code b{font-size:9pt;letter-spacing:.12em;color:#178fa9}.pdf-code span{display:block;font-size:8pt;color:#63756f;margin-top:4px}
   .pdf-status{margin:15px 0;padding:10px 12px;border:1px solid #cce5df;border-left:5px solid #12bfe8;border-radius:10px;background:#f3faf8}
@@ -1516,7 +1557,7 @@ function pdfWindow(title,body){
   .pdf-box{border:1px solid #dce8e4;border-radius:10px;padding:11px;background:#f8fbfa;white-space:pre-wrap;min-height:45px}
   .pdf-table{width:100%;border-collapse:collapse;border:1px solid #dce8e4;border-radius:10px;overflow:hidden}.pdf-table th{text-align:left;font-size:7.5pt;text-transform:uppercase;letter-spacing:.06em;color:#64766f;background:#eef6f3;padding:8px}.pdf-table td{padding:8px;border-top:1px solid #e2ebe8}.pdf-total{font-size:17pt;font-weight:800;color:#0a7f98;text-align:right;margin-top:12px}
   .pdf-footer{margin-top:25px;padding-top:10px;border-top:1px solid #dce8e4;display:flex;justify-content:space-between;gap:10px;color:#73837e;font-size:7.5pt}
-  .pdf-note{font-size:8pt;color:#60736c}.pdf-sign{margin-top:28px;display:grid;grid-template-columns:1fr 1fr;gap:30px}.pdf-sign div{border-top:1px solid #8ca29b;padding-top:6px;color:#64766f;font-size:8pt}
+  .pdf-note{font-size:8pt;color:#60736c}.pdf-sign{display:none}
   @media print{body{print-color-adjust:exact;-webkit-print-color-adjust:exact}.pdf-box,.pdf-status,.pdf-table th{print-color-adjust:exact;-webkit-print-color-adjust:exact}}
   </style></head><body><div class="pdf">${body}<div class="pdf-footer"><span>RafahStudio • documento profissional</span><span>Gerado em ${new Date().toLocaleString('pt-BR')}</span></div></div>
   <script>window.addEventListener('load',()=>setTimeout(()=>window.print(),350));<\/script></body></html>`;
@@ -1530,26 +1571,26 @@ function pdfWindow(title,body){
 function generateOrderPDF(id){
   const o=orders.find(x=>String(x.id)===String(id));if(!o)return;
   const b=o.briefing||{};
+  const orderNumber=getOrderPaperNumber(o, orders);
   const people=(b.people||[]).map(p=>`<tr><td>${esc(p.name)}</td><td>${esc(p.info||'—')}</td></tr>`).join('');
-  const body=`<header class="pdf-header"><div><div class="pdf-logo">${RAFahPdfLogoSvg}</div><div class="pdf-kicker">RafahStudio • documento de projeto</div><div class="pdf-title">${esc(o.project)}</div><div class="pdf-sub">${esc(designer.name||'Designer')}${designer.brand&&designer.brand!=='RafahStudio'?' • '+esc(designer.brand):''}</div></div><div class="pdf-code"><b>PEDIDO</b><span>${esc(o.id)}</span></div></header>
+  const body=`<header class="pdf-header"><div><div class="pdf-logo">${RAFahPdfLogoSvg}</div><div class="pdf-kicker">RafahStudio • documento de projeto</div><div class="pdf-title">${esc(o.project)}</div><div class="pdf-sub">${esc(designer.name||'Designer')}${designer.brand&&designer.brand!=='RafahStudio'?' • '+esc(designer.brand):''}</div></div><div class="pdf-code"><b>PEDIDO</b><span>Nº ${esc(orderNumber)}</span></div></header>
   <div class="pdf-status"><b>${esc(o.status)}</b><span>${o.paid||o.status==='Pago'?'PAGAMENTO RECEBIDO':'PAGAMENTO PENDENTE'}</span></div>
   <div class="pdf-grid"><div class="pdf-field"><label>Cliente</label><strong>${esc(o.client)}</strong></div><div class="pdf-field"><label>Serviço</label><strong>${esc(o.type)}</strong></div><div class="pdf-field"><label>Prazo</label><strong>${dateLabel(o.deadline)}</strong></div><div class="pdf-field"><label>Valor</label><strong>${money(o.value)}</strong></div></div>
   <section class="pdf-section"><h2>Briefing</h2><div class="pdf-box">${esc(b.texts||b.notes||'Sem briefing adicional.')}</div></section>
   ${b.refs?`<section class="pdf-section"><h2>Referências</h2><div class="pdf-box">${esc(b.refs)}</div></section>`:''}
   ${b.notes?`<section class="pdf-section"><h2>Observações</h2><div class="pdf-box">${esc(b.notes)}</div></section>`:''}
-  ${b.people?.length?`<section class="pdf-section"><h2>Pessoas da arte</h2><table class="pdf-table"><thead><tr><th>Nome</th><th>Informação</th></tr></thead><tbody>${people}</tbody></table></section>`:''}
-  <div class="pdf-sign"><div>Cliente / responsável</div><div>${esc(designer.name||'Designer')}</div></div>`;
+  ${b.people?.length?`<section class="pdf-section"><h2>Pessoas da arte</h2><table class="pdf-table"><thead><tr><th>Nome</th><th>Informação</th></tr></thead><tbody>${people}</tbody></table></section>`:''}`;
   pdfWindow(`Pedido — ${o.project}`,body);
 }
 function generateQuotePDF(id){
   const q=quotes.find(x=>String(x.id)===String(id));if(!q)return;
+  const quoteNumber=getQuotePaperNumber(q, quotes);
   const rows=(q.items||[]).map(i=>`<tr><td>${esc(i.desc||'Serviço')}</td><td>${i.qty}</td><td>${money(i.price)}</td><td>${money((Number(i.qty)||0)*(Number(i.price)||0))}</td></tr>`).join('');
-  const body=`<header class="pdf-header"><div><div class="pdf-logo">${RAFahPdfLogoSvg}</div><div class="pdf-kicker">RafahStudio • proposta comercial</div><div class="pdf-title">${esc(q.project)}</div><div class="pdf-sub">${esc(designer.name||'Designer')}${designer.brand&&designer.brand!=='RafahStudio'?' • '+esc(designer.brand):''}</div></div><div class="pdf-code"><b>ORÇAMENTO</b><span>${esc(q.id)}</span></div></header>
+  const body=`<header class="pdf-header"><div><div class="pdf-logo">${RAFahPdfLogoSvg}</div><div class="pdf-kicker">RafahStudio • proposta comercial</div><div class="pdf-title">${esc(q.project)}</div><div class="pdf-sub">${esc(designer.name||'Designer')}${designer.brand&&designer.brand!=='RafahStudio'?' • '+esc(designer.brand):''}</div></div><div class="pdf-code"><b>ORÇAMENTO</b><span>Nº ${esc(quoteNumber)}</span></div></header>
   <div class="pdf-status"><b>${esc(q.status)}</b><span>VALIDADE • ${dateLabel(q.valid)}</span></div>
   <div class="pdf-grid"><div class="pdf-field"><label>Cliente</label><strong>${esc(q.client)}</strong></div><div class="pdf-field"><label>Projeto</label><strong>${esc(q.project)}</strong></div></div>
   <section class="pdf-section"><h2>Itens da proposta</h2><table class="pdf-table"><thead><tr><th>Descrição</th><th>Qtd.</th><th>Unitário</th><th>Total</th></tr></thead><tbody>${rows}</tbody></table><div class="pdf-total">Total: ${money(q.total)}</div></section>
-  ${q.terms?`<section class="pdf-section"><h2>Condições</h2><div class="pdf-box">${esc(q.terms)}</div></section>`:''}
-  <div class="pdf-sign"><div>Cliente / responsável</div><div>${esc(designer.name||'Designer')}</div></div>`;
+  ${q.terms?`<section class="pdf-section"><h2>Condições</h2><div class="pdf-box">${esc(q.terms)}</div></section>`:''}`;
   pdfWindow(`Orçamento — ${q.project}`,body);
 }
 
@@ -1725,9 +1766,13 @@ async function init(){
 try{
   supabaseClient?.auth.onAuthStateChange((event,session)=>{
     if(event==='SIGNED_IN'&&session?.user&&!currentUser){
+      if(isPublicHashRoute()) return;
       establishAuthenticatedUser(session.user).then(()=>{showApp();startLiveSync();});
     }
-    if(event==='SIGNED_OUT'){currentUser=null;localStorage.removeItem(KEYS.user);showAuth('login');}
+    if(event==='SIGNED_OUT'){
+      currentUser=null;localStorage.removeItem(KEYS.user);
+      if(!isPublicHashRoute()) showAuth('login');
+    }
   });
 }catch(e){}
 
