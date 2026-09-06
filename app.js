@@ -38,15 +38,8 @@ function initSupabaseClient(){
       console.error('[RafahStudio] Supabase library not found.');
       return false;
     }
-    // Use the canonical Supabase Auth storage key so the session survives
-    // reloads and browser/PWA restarts reliably. Migrate the previous key once.
-    const authStorageKey = 'sb-pltnbrjdagjwjuajoquv-auth-token';
-    try{
-      const legacyAuth = localStorage.getItem('rafahstudio-auth');
-      if(legacyAuth && !localStorage.getItem(authStorageKey)) localStorage.setItem(authStorageKey, legacyAuth);
-    }catch(e){}
     supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
-      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, storageKey: authStorageKey, storage: window.localStorage, flowType: 'pkce' }
+      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, storageKey: 'rafahstudio-auth' }
     });
     return !!supabaseClient;
   }catch(err){
@@ -188,47 +181,49 @@ function classifyClientMessage(text){
   const urgent=/(urgente|urgência|urgencia|rápido|rapido|rapidinho|o quanto antes|pra hoje|para hoje|preciso logo|preciso da arte|me manda logo|manda logo|quero logo|tem pressa|pressa|às pressas|as pressas)/i.test(t);
   return {alteration,urgent};
 }
-async function uploadPublicChatImage(file,token){
-  if(!file||!token)throw new Error('Imagem inválida.');
-  if(file.size>8*1024*1024)throw new Error('A imagem deve ter no máximo 8 MB.');
-  const safe=(file.name||'imagem').replace(/[^a-zA-Z0-9._-]/g,'_');
-  const path=`${token}/chat/${Date.now()}-${safe}`;
-  const {error}=await supabaseClient.storage.from('briefing-files').upload(path,file,{upsert:false,contentType:file.type||'image/jpeg'});
+async function uploadPublicChatFile(file, token){
+  if(!supabaseClient||!file||!token)throw new Error('Não foi possível preparar o arquivo.');
+  if(file.size>12*1024*1024)throw new Error('O arquivo deve ter no máximo 12 MB.');
+  const safe=(file.name||'arquivo').replace(/[^a-zA-Z0-9._-]/g,'_');
+  const path=`chat/${token}/${Date.now()}-${Math.random().toString(36).slice(2,8)}-${safe}`;
+  const {error}=await supabaseClient.storage.from('briefing-files').upload(path,file,{upsert:false,contentType:file.type||'application/octet-stream'});
   if(error)throw error;
-  return supabaseClient.storage.from('briefing-files').getPublicUrl(path).data.publicUrl;
+  const {data}=supabaseClient.storage.from('briefing-files').getPublicUrl(path);
+  return {url:data.publicUrl,name:file.name,type:file.type||'application/octet-stream',size:file.size};
 }
-async function submitPublicChatImage(file){
-  const token=decodeURIComponent(location.hash.slice('#pedido='.length));
-  if(!file||!token||!supabaseClient)return;
-  try{
-    const url=await uploadPublicChatImage(file,token);
-    const text=($('#trackingChatText')?.value||'').trim();
-    const ai=classifyClientMessage(text);
-    if(text&&ai.alteration){
-      const {error}=await supabaseClient.rpc('submit_order_alteration',{p_tracking_token:token,p_message:text}); if(error)throw error;
-      // A imagem fica como mensagem visual complementar, sem poluir o histórico do pedido.
-      await supabaseClient.rpc('submit_order_message_with_image',{p_tracking_token:token,p_message:'Imagem anexada à solicitação.',p_image_url:url});
-    }else{
-      const {error}=await supabaseClient.rpc('submit_order_message_with_image',{p_tracking_token:token,p_message:text||'Imagem enviada.',p_image_url:url}); if(error)throw error;
-    }
-    if($('#trackingChatText'))$('#trackingChatText').value='';
-    await refreshTrackingChatOnly(token);
-  }catch(e){toast(e?.message||'Não foi possível enviar a imagem.','error');}
+function setChatFilePreview(input,labelId,file){
+  if(!labelId)return;
+  const el=$(labelId); if(el)el.textContent=file?`📎 ${file.name}`:'Anexar foto/arquivo';
+}
+function setInputFile(input,file){
+  if(!input||!file)return;
+  try{const dt=new DataTransfer();dt.items.add(file);input.files=dt.files;setChatFilePreview(input,input.id==='trackingChatFile'?'#trackingChatFileLabel':'#conversationFileLabel',file);}catch(e){console.warn('Arquivo colado:',e);}
 }
 async function submitPublicMessage(){
   const token=decodeURIComponent(location.hash.slice('#pedido='.length));
   const text=($('#trackingChatText')?.value||'').trim();
-  if(text.length<1)return;
+  const file=$('#trackingChatFile')?.files?.[0]||null;
+  if(!text&&!file)return;
   const btn=$('#trackingChatForm button[type="submit"]');if(btn){btn.disabled=true;btn.textContent='Enviando…';}
   const ai=classifyClientMessage(text);
   try{
-    const fn=ai.alteration?'submit_order_alteration':'submit_order_message';
-    const {error}=await supabaseClient.rpc(fn,{p_tracking_token:token,p_message:text});
-    if(error)throw error;
-    $('#trackingChatText').value='';
-    if(ai.alteration){
+    const upload=file?await uploadPublicChatFile(file,token):null;
+    if(ai.alteration&&!upload){
+      const {error}=await supabaseClient.rpc('submit_order_alteration',{p_tracking_token:token,p_message:text});
+      if(error)throw error;
       $('#trackingChatHint')?.replaceChildren(document.createTextNode('Sua mensagem foi identificada como solicitação de alteração e enviada ao designer.'));
+    }else if(ai.alteration&&upload){
+      const {error}=await supabaseClient.rpc('submit_order_alteration_with_file',{p_tracking_token:token,p_message:text,p_image_url:upload.url,p_meta:{file_name:upload.name,file_type:upload.type,file_size:upload.size}});
+      if(error)throw error;
+      $('#trackingChatHint')?.replaceChildren(document.createTextNode('Sua mensagem foi identificada como solicitação de alteração e enviada ao designer.'));
+    }else{
+      const {error}=await supabaseClient.rpc('submit_order_message_with_file',{p_tracking_token:token,p_message:text,p_image_url:upload?.url||'',p_meta:upload?{file_name:upload.name,file_type:upload.type,file_size:upload.size}:{} });
+      if(error)throw error;
+      if(ai.alteration)$('#trackingChatHint')?.replaceChildren(document.createTextNode('Sua mensagem foi identificada como solicitação de alteração e enviada ao designer.'));
     }
+    $('#trackingChatText').value='';
+    if($('#trackingChatFile'))$('#trackingChatFile').value='';
+    setChatFilePreview(null,'#trackingChatFileLabel',null);
     await refreshTrackingChatOnly(token);
   }catch(e){$('#trackingActionMessage').textContent=e?.message||'Não foi possível enviar a mensagem.';}
   finally{if(btn){btn.disabled=false;btn.innerHTML='Enviar <span>→</span>';}}
@@ -236,7 +231,7 @@ async function submitPublicMessage(){
 function renderTrackingChat(events=[]){
   const box=$('#trackingChatMessages');if(!box)return;
   const msgs=events.filter(e=>['message','payment'].includes(e.kind));
-  box.innerHTML=msgs.length?msgs.slice().reverse().map(ev=>`<div class="tracking-chat-message ${ev.author==='client'?'mine':'theirs'}"><div class="chat-avatar">${ev.author==='client'?'Você':'RS'}</div><div class="chat-bubble"><div><b>${ev.author==='client'?'Você':ev.kind==='payment'?'Designer':'Designer'}</b><time>${new Date(ev.created_at).toLocaleString('pt-BR')}</time></div><p>${esc(ev.message||'')}</p>${ev.image_url?`<button type="button" class="chat-image-preview" data-chat-image="${esc(ev.image_url)}"><img loading="lazy" decoding="async" src="${esc(ev.image_url)}" alt="Imagem enviada na conversa"></button>`:''}${ev.kind==='payment'&&ev.meta?`<div class="chat-pix-inline"><b>PIX ${esc(ev.meta.pix_type||'')}</b><strong>${esc(ev.meta.pix_key||'')}</strong><small>${esc(ev.meta.pix_name||'')}</small><button type="button" class="btn secondary small" data-copy-pix="${esc(ev.meta.pix_key||'')}">Copiar chave</button></div>`:''}</div></div>`).join(''):'<div class="tracking-chat-empty">Ainda não há mensagens. Comece a conversa sobre este pedido.</div>';
+  box.innerHTML=msgs.length?msgs.slice().reverse().map(ev=>{const meta=ev.meta||{};const file=ev.image_url?(meta.file_type?.startsWith('image/')?`<a class="chat-image-preview" href="${esc(ev.image_url)}" target="_blank" rel="noopener"><img src="${esc(ev.image_url)}" alt="Foto enviada no chat"><span>${esc(meta.file_name||'Imagem')}</span></a>`:`<a class="chat-file-card" href="${esc(ev.image_url)}" target="_blank" rel="noopener"><span>📎</span><b>${esc(meta.file_name||'Abrir arquivo')}</b><small>Abrir</small></a>`):'';return `<div class="tracking-chat-message ${ev.author==='client'?'mine':'theirs'}"><div class="chat-avatar">${ev.author==='client'?'Você':'RS'}</div><div class="chat-bubble"><div><b>${ev.author==='client'?'Você':ev.kind==='payment'?'Designer':'Designer'}</b><time>${new Date(ev.created_at).toLocaleString('pt-BR')}</time></div>${ev.message?`<p>${esc(ev.message)}</p>`:''}${file}${ev.kind==='payment'&&ev.meta?`<div class="chat-pix-inline"><b>PIX ${esc(ev.meta.pix_type||'')}</b><strong>${esc(ev.meta.pix_key||'')}</strong><small>${esc(ev.meta.pix_name||'')}</small><button type="button" class="btn secondary small" data-copy-pix="${esc(ev.meta.pix_key||'')}">Copiar chave</button></div>`:''}</div></div>`}).join(''):'<div class="tracking-chat-empty">Ainda não há mensagens. Comece a conversa sobre este pedido.</div>';
   box.scrollTop=box.scrollHeight;
 }
 
@@ -280,29 +275,26 @@ function renderConversations(){
   const list=$('#conversationClients'),body=$('#conversationBody'),title=$('#conversationTitle'),sub=$('#conversationSubtitle'),avatar=$('#conversationAvatar');
   const names=conversationClients();
   if(!conversationSelectedClient||!names.includes(conversationSelectedClient))conversationSelectedClient=names[0]||'';
-  if(list){
-    list.innerHTML=names.map(name=>{const ev=conversationEvents(name);const last=ev[ev.length-1];return `<button type="button" class="conversation-client ${name===conversationSelectedClient?'active':''}" data-conversation-client="${esc(name)}"><span class="conversation-avatar">${esc(initials(name))}</span><span><b>${esc(name)}</b><small>${last?esc(last.message||'Mensagem'): 'Sem mensagens ainda'}</small></span>${last?.author==='client'?'<em>●</em>':''}</button>`}).join('')||'<div class="empty-mini center"><span>💬</span><div><b>Nenhuma conversa ainda.</b><small>Quando um cliente enviar uma mensagem, ela aparecerá aqui.</small></div></div>';
-    list.onclick=(event)=>{const button=event.target.closest('[data-conversation-client]');if(!button)return;event.preventDefault();event.stopPropagation();conversationSelectedClient=button.dataset.conversationClient||'';renderConversations();};
-  }
+  if(list)list.innerHTML=names.map(name=>{const ev=conversationEvents(name);const last=ev[ev.length-1];return `<button class="conversation-client ${name===conversationSelectedClient?'active':''}" data-conversation-client="${esc(name)}"><span class="conversation-avatar">${esc(initials(name))}</span><span><b>${esc(name)}</b><small>${last?esc(last.message||'Mensagem'): 'Sem mensagens ainda'}</small></span>${last?.author==='client'?'<em>●</em>':''}</button>`}).join('')||'<div class="empty-mini center"><span>💬</span><div><b>Nenhuma conversa ainda.</b><small>Quando um cliente enviar uma mensagem, ela aparecerá aqui.</small></div></div>';
   if(!conversationSelectedClient){if(body)body.innerHTML='<div class="conversation-empty"><span>💬</span><h3>Suas conversas</h3><p>Selecione um cliente para começar.</p></div>';return;}
   const c=clients.find(x=>String(x.name).toLowerCase()===conversationSelectedClient.toLowerCase());
   if(title)title.textContent=conversationSelectedClient;
   if(sub)sub.textContent=`${clientOrders(conversationSelectedClient).length} pedido(s) • conversa privada`;
   if(avatar)avatar.innerHTML=c?.photo?`<img src="${esc(c.photo)}" alt="">`:esc(initials(conversationSelectedClient));
   const evs=conversationEvents(conversationSelectedClient);
-  if(body)body.innerHTML=evs.length?evs.map(ev=>`<div class="conversation-message ${ev.author==='client'?'incoming':'outgoing'}"><div class="conversation-message-head"><b>${ev.author==='client'?esc(conversationSelectedClient):esc(designer.name||'Você')}</b><small>${esc(ev.project||'Pedido')} • ${new Date(ev.created_at).toLocaleString('pt-BR')}</small></div><p>${esc(ev.message||'')}</p>${ev.image_url?`<button type="button" class="chat-image-preview" data-chat-image="${esc(ev.image_url)}"><img loading="lazy" decoding="async" src="${esc(ev.image_url)}" alt="Imagem enviada na conversa"></button>`:''}${ev.kind==='payment'&&ev.meta?`<div class="chat-pix-inline"><b>PIX ${esc(ev.meta.pix_type||'')}</b><strong>${esc(ev.meta.pix_key||'')}</strong><small>${esc(ev.meta.pix_name||'')}</small><button class="btn secondary small" data-copy-pix="${esc(ev.meta.pix_key||'')}">Copiar chave</button></div>`:''}</div>`).join(''):'<div class="conversation-empty"><span>✦</span><h3>Conversa nova</h3><p>Envie a primeira mensagem para ${esc(conversationSelectedClient)}.</p></div>';
+  if(body)body.innerHTML=evs.length?evs.map(ev=>`<div class="conversation-message ${ev.author==='client'?'incoming':'outgoing'}"><div class="conversation-message-head"><b>${ev.author==='client'?esc(conversationSelectedClient):esc(designer.name||'Você')}</b><small>${esc(ev.project||'Pedido')} • ${new Date(ev.created_at).toLocaleString('pt-BR')}</small></div>${ev.message?`<p>${esc(ev.message)}</p>`:''}${ev.image_url?(ev.meta?.file_type?.startsWith('image/')?`<a class="chat-image-preview" href="${esc(ev.image_url)}" target="_blank" rel="noopener"><img src="${esc(ev.image_url)}" alt="Foto enviada no chat"><span>${esc(ev.meta?.file_name||'Imagem')}</span></a>`:`<a class="chat-file-card" href="${esc(ev.image_url)}" target="_blank" rel="noopener"><span>📎</span><b>${esc(ev.meta?.file_name||'Abrir arquivo')}</b><small>Abrir</small></a>`):''}${ev.kind==='payment'&&ev.meta?`<div class="chat-pix-inline"><b>PIX ${esc(ev.meta.pix_type||'')}</b><strong>${esc(ev.meta.pix_key||'')}</strong><small>${esc(ev.meta.pix_name||'')}</small><button class="btn secondary small" data-copy-pix="${esc(ev.meta.pix_key||'')}">Copiar chave</button></div>`:''}</div>`).join(''):'<div class="conversation-empty"><span>✦</span><h3>Conversa nova</h3><p>Envie a primeira mensagem para ${esc(conversationSelectedClient)}.</p></div>';
   body?.scrollTo({top:body.scrollHeight,behavior:'auto'});
 }
 function openConversationForClient(name){conversationSelectedClient=name;go('conversas');}
 
-async function sendDesignerTrackingMessage(orderId,text,kind='message',meta={},imageUrl=''){
+async function sendDesignerTrackingMessage(orderId,text,kind='message',meta={}){
   const o=orders.find(x=>String(x.id)===String(orderId)); if(!o) throw new Error('Pedido não encontrado.');
   await ensureOrderTracking(o);
   if(!o.trackingToken) throw new Error('Este pedido ainda não possui acompanhamento.');
-  const payload={p_owner_secret:getOwnerToken(),p_tracking_token:o.trackingToken,p_kind:kind,p_message:String(text||''),p_image_url:imageUrl||'',p_meta:meta||{}};
+  const payload={p_owner_secret:getOwnerToken(),p_tracking_token:o.trackingToken,p_kind:kind,p_message:String(text||''),p_image_url:'',p_meta:meta||{}};
   const {data,error}=await supabaseClient.rpc('add_order_tracking_event',payload);
   if(error) throw error;
-  const ev={id:data,tracking_token:o.trackingToken,order_id:String(o.id),author:'designer',kind,message:String(text||''),image_url:imageUrl||'',meta:meta||{},created_at:new Date().toISOString()};
+  const ev={id:data,tracking_token:o.trackingToken,order_id:String(o.id),author:'designer',kind,message:String(text||''),image_url:'',meta:meta||{},created_at:new Date().toISOString()};
   o.trackingEvents=o.trackingEvents||[];
   o.trackingEvents.unshift(ev);
   persist();
@@ -334,29 +326,29 @@ async function sendConversationMessage(kind='message'){
 async function sendConversationPix(){
   const target=clientOrders(conversationSelectedClient).find(o=>o.trackingToken)||clientOrders(conversationSelectedClient)[0];if(target){try{await sendPixToClient(target.id);}catch(e){toast(e?.message||'Não foi possível enviar o PIX.','error');}}renderConversations();
 }
-async function sendConversationImage(file){
-  const name=conversationSelectedClient;if(!file||!name)return;
-  const target=clientOrders(name).find(o=>o.trackingToken)||clientOrders(name)[0];if(!target){toast('Esse cliente ainda não possui acompanhamento.','error');return;}
+async function sendConversationAttachment(){
+  const file=$('#conversationFile')?.files?.[0];
+  const name=conversationSelectedClient;
+  if(!file||!name)return;
+  const target=clientOrders(name).find(o=>o.trackingToken)||clientOrders(name)[0];
+  if(!target){toast('Esse cliente ainda não possui acompanhamento.','error');return;}
   try{
     await ensureOrderTracking(target);
-    const asset=await uploadOrderAsset(file,target.id,'chat');
-    await sendDesignerTrackingMessage(target.id,'Imagem enviada na conversa.','message',{},asset.url);
-    renderConversations();
-    toast('Foto enviada na conversa.','success');
-  }catch(e){toast(e?.message||'Não foi possível enviar a foto.','error');}
+    const upload=await uploadPublicChatFile(file,target.trackingToken);
+    const {error}=await supabaseClient.rpc('add_order_tracking_event',{p_owner_secret:getOwnerToken(),p_tracking_token:target.trackingToken,p_kind:'message',p_message:'',p_image_url:upload.url,p_meta:{file_name:upload.name,file_type:upload.type,file_size:upload.size}});
+    if(error)throw error;
+    const ev={id:Date.now(),tracking_token:target.trackingToken,order_id:String(target.id),author:'designer',kind:'message',message:'',image_url:upload.url,meta:{file_name:upload.name,file_type:upload.type,file_size:upload.size},created_at:new Date().toISOString()};
+    target.trackingEvents=target.trackingEvents||[];target.trackingEvents.unshift(ev);persist();await broadcastTrackingUpdate(target.trackingToken,'chat');
+    $('#conversationFile').value='';setChatFilePreview(null,'#conversationFileLabel',null);renderConversations();toast('Arquivo enviado.','success');
+  }catch(e){toast(e?.message||'Não foi possível enviar o arquivo.','error');}
 }
 function setupConversations(){
-  const form=$('#conversationForm'), text=$('#conversationText');
-  if(form){
-    const input=document.createElement('input');input.type='file';input.accept='image/*';input.id='conversationImage';input.hidden=true;form.appendChild(input);
-    const attach=document.createElement('button');attach.type='button';attach.className='btn secondary chat-attach-btn';attach.textContent='📎 Foto';attach.title='Enviar foto';const actions=form.querySelector('.conversation-compose>div');if(actions)actions.insertBefore(attach,actions.firstChild);
-    attach.onclick=()=>input.click(); input.onchange=()=>{const f=input.files?.[0];if(f)sendConversationImage(f);input.value='';};
-    text?.addEventListener('paste',e=>{const item=[...(e.clipboardData?.items||[])].find(x=>x.type.startsWith('image/'));if(item){e.preventDefault();const f=item.getAsFile();if(f)sendConversationImage(f);}});
-  }
   $('#conversationClients')?.addEventListener('click',e=>{const b=e.target.closest('[data-conversation-client]');if(b){conversationSelectedClient=b.dataset.conversationClient;renderConversations();}});
   $('#conversationForm')?.addEventListener('submit',e=>{e.preventDefault();sendConversationMessage();});
   $('#conversationText')?.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendConversationMessage();}});
   $('#conversationPixBtn')?.addEventListener('click',sendConversationPix);
+  $('#conversationFile')?.addEventListener('change',e=>setChatFilePreview(e.target,'#conversationFileLabel',e.target.files?.[0]));
+  $('#conversationText')?.addEventListener('paste',e=>{const f=[...(e.clipboardData?.files||[])].find(x=>x.type?.startsWith('image/'));if(f){e.preventDefault();setInputFile($('#conversationFile'),f);}});
 }
 async function refreshTrackingChatOnly(token){
   if(!token||!supabaseClient)return;
@@ -663,7 +655,6 @@ function loadScoped(){
   deletedRemoteIds=read(sk('rafahstudio:deletedRemote'),[]);
   deletedRemoteFingerprints=read(sk('rafahstudio:deletedRemoteFingerprints'),[]);
   designer={...DEFAULT_DESIGNER,...(read(sk('rafahstudio:designer'),{})||{})};
-  if(ensureOrderNumbers(orders)) write(sk('rafahstudio:orders'),orders);
 }
 
 let workspaceRemoteReady=false, workspaceSaveTimer=null, workspaceLastRemoteAt='';
@@ -674,7 +665,6 @@ function applyWorkspaceState(state){
   if(state.ownerToken)localStorage.setItem(ownerTokenKey(accountScopeId()),String(state.ownerToken));
   if(state.publicToken)localStorage.setItem(publicTokenKey(accountScopeId()),String(state.publicToken));
   if(Array.isArray(state.orders))orders=state.orders.map(normalizeOrder);
-  ensureOrderNumbers(orders);
   if(Array.isArray(state.clients))clients=state.clients;
   if(Array.isArray(state.quotes))quotes=state.quotes;
   if(Array.isArray(state.catalog))catalog=state.catalog;
@@ -822,7 +812,7 @@ function formatRelative(iso){const diff=Math.max(0,Date.now()-new Date(iso).getT
 function statusClass(s){return ({'Novo':'status-new','Em andamento':'status-doing','Esperando aprovação':'status-wait','Alteração':'status-change','Entregue':'status-done','Pago':'status-paid','Finalizado':'status-finalized'})[s]||'';}
 function priorityClass(p){return ({Alta:'priority-high',Urgente:'priority-urgent'})[p]||'';}
 function pageMeta(page){return {dashboard:['VISÃO GERAL','Dashboard'],pedidos:['PROJETOS','Pedidos'],clientes:['RELACIONAMENTO','Clientes'],catalogo:['PORTFÓLIO','Catálogo'],orcamentos:['COMERCIAL','Orçamentos'],financeiro:['FINANCEIRO','Financeiro'],perfil:['SUA CONTA','Meu perfil'],conversas:['RELACIONAMENTO','Conversas']}[page]||['','RafahStudio'];}
-function go(page){ currentPage=page; $$('.page').forEach(p=>p.classList.toggle('active',p.id===page)); $$('.nav-item[data-page]').forEach(n=>n.classList.toggle('active',n.dataset.page===page)); const [ey,t]=pageMeta(page); const pe=$('#pageEyebrow'),pt=$('#pageTitle'); if(pe)pe.textContent=ey; if(pt)pt.textContent=t; $('#notificationPanel')?.classList.remove('open'); $('#sidebar')?.classList.remove('mobile-open'); render(); window.scrollTo({top:0,behavior:'smooth'}); }
+function go(page){ currentPage=page; $$('.page').forEach(p=>p.classList.toggle('active',p.id===page)); $$('.nav-item[data-page]').forEach(n=>n.classList.toggle('active',n.dataset.page===page)); const [ey,t]=pageMeta(page); $('#pageEyebrow').textContent=ey; $('#pageTitle').textContent=t; $('#notificationPanel').classList.remove('open'); $('#sidebar').classList.remove('mobile-open'); render(); window.scrollTo({top:0,behavior:'smooth'}); }
 
 function render(){
   if(!currentUser) return;
@@ -874,7 +864,7 @@ function renderDashboard(){
 
 function filteredOrders(){
  let q=($('#orderSearch')?.value||'').toLowerCase().trim(); let list=orderFilter==='all'?[...orders]:orders.filter(o=>o.status===orderFilter);
- if(q) list=list.filter(o=>`${getOrderPaperNumber(o, orders)} ${o.project} ${o.client} ${o.type}`.toLowerCase().includes(q));
+ if(q) list=list.filter(o=>`${o.project} ${o.client} ${o.type}`.toLowerCase().includes(q));
  const sort=$('#orderSort')?.value||'recent'; list.sort((a,b)=>sort==='deadline'?(a.deadline||'9999').localeCompare(b.deadline||'9999'):sort==='value'?b.value-a.value:sort==='oldest'?a.created.localeCompare(b.created):b.created.localeCompare(a.created)); return list;
 }
 function orderCardArtwork(o){
@@ -896,7 +886,7 @@ function renderOrders(){
 
  const q=($('#orderSearch')?.value||'').toLowerCase().trim();
  const sort=$('#orderSort')?.value||'recent';
- const sortOrders=(arr)=>arr.filter(o=>!q||`${getOrderPaperNumber(o, orders)} ${o.project} ${o.client} ${o.type}`.toLowerCase().includes(q)).sort((a,b)=>
+ const sortOrders=(arr)=>arr.filter(o=>!q||`${o.project} ${o.client} ${o.type}`.toLowerCase().includes(q)).sort((a,b)=>
    sort==='deadline'?(a.deadline||'9999').localeCompare(b.deadline||'9999'):
    sort==='value'?b.value-a.value:
    sort==='oldest'?a.created.localeCompare(b.created):
@@ -916,7 +906,7 @@ function renderOrders(){
            <span class="project-mark">${esc(initials(o.project))}</span>
            <div><b>${esc(o.project)}</b><small>${esc(o.client)}</small></div>
          </div>
-         <span class="order-card-number">#${esc(getOrderPaperNumber(o, orders))}</span><span class="drag-handle" title="Arraste para mover">⋮⋮</span><button class="icon-action" title="Abrir pedido" data-open-order="${o.id}">↗</button>
+         <span class="drag-handle" title="Arraste para mover">⋮⋮</span><button class="icon-action" title="Abrir pedido" data-open-order="${o.id}">↗</button>
        </div>
        <div class="order-card-meta">
          <span>${esc(o.type)}</span>
@@ -996,15 +986,9 @@ function renderQuotes(){
  $('#quotesTable').innerHTML=list.map(x=>`<div class="table-row quote-row"><div class="project-cell"><span class="project-mark quote">Q</span><div><b>${esc(x.project)}</b><small>${esc(x.description||'Proposta comercial')}</small></div></div><div>${esc(x.client)}</div><div>${dateLabel(x.valid)}</div><div><span class="status-pill quote-${x.status.toLowerCase()}" >${esc(x.status)}</span></div><div><b>${money(x.total)}</b></div><div class="row-actions"><button class="icon-action" title="Abrir" data-edit-quote="${x.id}">↗</button><button class="icon-action" title="PDF" data-quote-pdf="${x.id}">▣</button><button class="icon-action danger" title="Excluir" data-delete-quote="${x.id}">×</button></div></div>`).join('')||`<div class="empty-state"><span>▣</span><h3>Nenhum orçamento</h3><p>Monte uma proposta profissional e envie em PDF.</p><button class="btn primary" data-action="new-quote">+ Novo orçamento</button></div>`;
 }
 function renderFinance(){
- const start=$('#finStart'),end=$('#finEnd'),status=$('#finStatus'); if(!start||!end||!status)return;
- const s=start.value||'',e=end.value||'',st=status.value||'all';
- const list=orders.filter(o=>{const created=String(o.created||'');const paid=Boolean(o.paid||o.status==='Pago'||o.status==='Finalizado');return (!s||created>=s)&&(!e||created<=e)&&(st==='all'||(st==='paid'?paid:!paid));});
- const total=list.reduce((a,o)=>a+(Number(o.value)||0),0);
- const paid=list.filter(o=>o.paid||o.status==='Pago'||o.status==='Finalizado').reduce((a,o)=>a+(Number(o.value)||0),0);
- const set=(id,value)=>{const el=$('#'+id);if(el)el.textContent=money(value);};
- set('fTotal',total);set('fPaid',paid);set('fPending',Math.max(0,total-paid));set('fAverage',list.length?total/list.length:0);
- const table=$('#financeTable'); if(!table)return;
- table.innerHTML=list.map(o=>`<div class="table-row finance-row"><div class="project-cell"><span class="project-mark">${esc(initials(o.project))}</span><div><b>${esc(o.project)}</b><small>${esc(o.type)}</small></div></div><div>${esc(o.client)}</div><div>${dateLabel(o.created)}</div><div><span class="status-pill ${o.paid||o.status==='Pago'||o.status==='Finalizado'?'status-paid':'status-wait'}">${o.paid||o.status==='Pago'||o.status==='Finalizado'?'Pago':'Pendente'}</span></div><div><b>${money(o.value)}</b></div><div><button class="icon-action" data-open-order="${o.id}">↗</button></div></div>`).join('')||`<div class="empty-state"><span>◒</span><h3>Nenhum lançamento</h3><p>Ajuste os filtros ou crie pedidos com valor.</p></div>`;
+ const s=$('#finStart').value,e=$('#finEnd').value,st=$('#finStatus').value; let list=orders.filter(o=>(!s||o.created>=s)&&(!e||o.created<=e)&&(st==='all'||(st==='paid'?(o.paid||o.status==='Pago'):!o.paid&&!['Pago'].includes(o.status))));
+ const total=list.reduce((a,o)=>a+o.value,0),paid=list.filter(o=>o.paid||o.status==='Pago').reduce((a,o)=>a+o.value,0); $('#fTotal').textContent=money(total); $('#fPaid').textContent=money(paid); $('#fPending').textContent=money(total-paid); $('#fAverage').textContent=money(list.length?total/list.length:0);
+ $('#financeTable').innerHTML=list.map(o=>`<div class="table-row finance-row"><div class="project-cell"><span class="project-mark">${esc(initials(o.project))}</span><div><b>${esc(o.project)}</b><small>${esc(o.type)}</small></div></div><div>${esc(o.client)}</div><div>${dateLabel(o.created)}</div><div><span class="status-pill ${o.paid||o.status==='Pago'?'status-paid':'status-wait'}">${o.paid||o.status==='Pago'?'Pago':'Pendente'}</span></div><div><b>${money(o.value)}</b></div><div><button class="icon-action" data-open-order="${o.id}">↗</button></div></div>`).join('')||`<div class="empty-state"><span>◒</span><h3>Nenhum lançamento</h3><p>Ajuste os filtros ou crie pedidos com valor.</p></div>`;
 }
 function renderNotifications(){
  const unread=notifications.filter(n=>!n.read).length; $('#notifyCount').textContent=unread; $('#notifyCount').style.display=unread?'flex':'none';
@@ -1012,7 +996,7 @@ function renderNotifications(){
 }
 function renderProfile(){ $('#dName').value=designer.name||'';$('#dBrand').value=designer.brand||'';$('#dWhats').value=designer.whats||'';$('#dEmail').value=designer.email||'';$('#dInsta').value=designer.insta||'';$('#dPortfolio').value=designer.portfolio||'';if($('#dPixType'))$('#dPixType').value=designer.pixType||'CPF';if($('#dPixKey'))$('#dPixKey').value=designer.pixKey||'';if($('#dPixName'))$('#dPixName').value=designer.pixName||'';$('#dArea').value=designer.area||'';$('#dBio').value=designer.bio||''; const cover=$('#profileCover'); if(cover){cover.style.backgroundImage=designer.banner?`url(\"${designer.banner}\")`:'';cover.classList.toggle('has-image',!!designer.banner);} }
 
-function showAuth(mode='login'){ if(isPublicHashRoute())return; $('#authScreen').classList.remove('hidden'); $('#app').classList.add('hidden'); $('#publicPage').classList.add('hidden'); $('#loginForm').classList.toggle('hidden',mode!=='login'); $('#registerForm').classList.toggle('hidden',mode!=='register'); $('#authEyebrow').textContent=mode==='login'?'ACESSAR CONTA':'COMEÇAR AGORA'; $('#authTitle').textContent=mode==='login'?'Bem-vindo de volta':'Crie seu workspace'; $('#authSubtitle').textContent=mode==='login'?'Entre com seu e-mail e senha.':'Sua conta fica salva no servidor e pode ser acessada de outro dispositivo.'; if(mode==='login')setTimeout(()=>$('#loginUser')?.focus(),80); }
+function showAuth(mode='login'){ $('#authScreen').classList.remove('hidden'); $('#app').classList.add('hidden'); $('#publicPage').classList.add('hidden'); $('#loginForm').classList.toggle('hidden',mode!=='login'); $('#registerForm').classList.toggle('hidden',mode!=='register'); $('#authEyebrow').textContent=mode==='login'?'ACESSAR CONTA':'COMEÇAR AGORA'; $('#authTitle').textContent=mode==='login'?'Bem-vindo de volta':'Crie seu workspace'; $('#authSubtitle').textContent=mode==='login'?'Entre com seu e-mail e senha.':'Sua conta fica salva no servidor e pode ser acessada de outro dispositivo.'; if(mode==='login')setTimeout(()=>$('#loginUser')?.focus(),80); }
 async function login(email,pass){
   if(!supabaseClient) initSupabaseClient();
   if(!supabaseClient){toast('Não foi possível conectar ao serviço de contas.','error');return;}
@@ -1166,13 +1150,11 @@ async function saveOrder(existing,peopleDraft=[],readyArtDraft=null){
     else if(readyArtDraft)data.readyArt=readyArtDraft;
     if(hasUploads)updateUploadProgress(92,'Salvando o pedido…');
     if(existing){
-      existing.paperNumber ??= getOrderPaperNumber(existing, orders);
       Object.assign(existing,data);
-      existing.paperNumber ??= getOrderPaperNumber(existing, orders);
       if(existing.status==='Pago'||existing.status==='Finalizado')existing.paid=true;
       if(was!==existing.status)addHistory(existing,`Status alterado de ${was} para ${existing.status}`);
     }else{
-      const o={id:orderId,...data,created:todayISO(),history:[],paperNumber:getOrderPaperNumber({id:orderId,created:todayISO()}, orders)};
+      const o={id:orderId,...data,created:todayISO(),history:[]};
       addHistory(o,'Pedido criado');
       orders.unshift(o);
       notify('Novo pedido criado',`${data.project} • ${data.client}`,'success','pedidos',o.id);
@@ -1185,31 +1167,6 @@ async function saveOrder(existing,peopleDraft=[],readyArtDraft=null){
   finally{if(btn){btn.disabled=false;btn.textContent='Salvar pedido';}}
 }
 function addHistory(o,text){o.history=o.history||[];o.history.unshift({id:uid('hist'),at:new Date().toISOString(),text});}
-function ensureOrderNumbers(list=orders){
-  if(!Array.isArray(list))return false;
-  let changed=false;
-  const sorted=[...list].sort((a,b)=>String(a.created||a.id||'').localeCompare(String(b.created||b.id||''))||String(a.id||'').localeCompare(String(b.id||'')));
-  sorted.forEach((o,i)=>{if(!o.paperNumber){o.paperNumber=String(i+1).padStart(4,'0');changed=true;}});
-  return changed;
-}
-function getOrderPaperNumber(order, list=orders){
-  const raw = order?.paperNumber ?? order?.orderNumber ?? order?.number;
-  if (raw !== undefined && raw !== null && String(raw).trim() !== '') {
-    const value = String(raw).trim();
-    return /^\d+$/.test(value) ? value.padStart(4,'0') : value;
-  }
-  const index = [...(Array.isArray(list)?list:[])].sort((a,b)=>new Date(a.created||0)-new Date(b.created||0)).findIndex(x=>String(x.id)===String(order?.id));
-  return String(index >= 0 ? index + 1 : 1).padStart(4,'0');
-}
-function getQuotePaperNumber(quote, list=quotes){
-  const raw = quote?.paperNumber ?? quote?.orderNumber ?? quote?.number;
-  if (raw !== undefined && raw !== null && String(raw).trim() !== '') {
-    const value = String(raw).trim();
-    return /^\d+$/.test(value) ? value.padStart(4,'0') : value;
-  }
-  const index = [...(Array.isArray(list)?list:[])].sort((a,b)=>new Date(a.created||0)-new Date(b.created||0)).findIndex(x=>String(x.id)===String(quote?.id));
-  return String(index >= 0 ? index + 1 : 1).padStart(4,'0');
-}
 function openOrderView(id){
   const o=orders.find(x=>x.id===id); if(!o)return;
   const b=o.briefing||{};
@@ -1394,31 +1351,16 @@ async function syncPublicProfileLink(token=getPublicToken()){
   }catch(e){console.warn('[RafahStudio] Perfil público:',e);return false;}
 }
 function copyText(text){navigator.clipboard?.writeText(text).then(()=>toast('Link copiado.')).catch(()=>{const ta=document.createElement('textarea');ta.value=text;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();toast('Link copiado.');});}
-function openPublic(){ $('#authScreen').classList.add('hidden');$('#app').classList.add('hidden');$('#trackingPage').classList.add('hidden');$('#publicPage').classList.remove('hidden'); }
-function openTrackingPublic(){ $('#authScreen').classList.add('hidden');$('#app').classList.add('hidden');$('#publicPage').classList.add('hidden');$('#trackingPage').classList.remove('hidden'); loadPublicTracking(); }
-function isPublicHashRoute(){
+function openPublic(){ $('#authScreen')?.classList.add('hidden');$('#app')?.classList.add('hidden');$('#trackingPage')?.classList.add('hidden');$('#publicPage')?.classList.remove('hidden'); }
+function openTrackingPublic(){ $('#authScreen')?.classList.add('hidden');$('#app')?.classList.add('hidden');$('#publicPage')?.classList.add('hidden');$('#trackingPage')?.classList.remove('hidden'); }
+function handlePublicHash(){
   const hash=String(location.hash||'');
-  return hash.startsWith('#briefing=') || hash.startsWith('#pedido=');
+  const isBriefing=hash.startsWith('#briefing=');
+  const isTracking=hash.startsWith('#pedido=');
+  if(!isBriefing&&!isTracking)return false;
+  if(isTracking){openTrackingPublic();return true;}
+  openPublic();return true;
 }
-function normalizeHashTarget(hash){
-  const raw=String(hash||'').trim();
-  if(!raw)return '';
-  if(raw.startsWith('#'))return raw;
-  if(raw.startsWith('http://')||raw.startsWith('https://')){
-    try{
-      const url=new URL(raw);
-      return url.hash || '';
-    }catch{return ''}
-  }
-  return `#${raw}`;
-}
-function navigateHash(hash){
-  const clean=normalizeHashTarget(hash);
-  if(!clean)return;
-  history.pushState({rafah:true},'',clean);
-  handlePublicHash();
-}
-function handlePublicHash(){const isBriefing=location.hash.startsWith('#briefing=');const isTracking=location.hash.startsWith('#pedido=');if(isTracking){openTrackingPublic();return true;}if(isBriefing){openPublic();loadPublicProfile();return true;}return false;}
 async function readFiles(fileList){const arr=[];for(const f of [...fileList]){if(f.size>8*1024*1024){toast(`${f.name} é maior que 8 MB e não foi anexado.`,'error');continue;}arr.push({id:uid('file'),name:f.name,type:f.type,size:f.size,previewUrl:URL.createObjectURL(f),file:f});}return arr;}
 let publicProfileCache={};
 function publicProfileFromHash(){
@@ -1521,18 +1463,13 @@ async function loadPublicTracking(opts={}){
 }
 function setupTracking(){
   loadPublicTracking();
-  const form=$('#trackingChatForm'), text=$('#trackingChatText');
-  if(form){
-    const input=document.createElement('input');input.type='file';input.accept='image/*';input.id='trackingChatImage';input.hidden=true;form.appendChild(input);
-    const attach=document.createElement('button');attach.type='button';attach.className='btn secondary chat-attach-btn';attach.textContent='📎 Foto';attach.title='Enviar foto';form.insertBefore(attach,form.querySelector('button[type="submit"]'));
-    attach.onclick=()=>input.click(); input.onchange=()=>{const f=input.files?.[0];if(f)submitPublicChatImage(f);input.value='';};
-    text?.addEventListener('paste',e=>{const item=[...(e.clipboardData?.items||[])].find(x=>x.type.startsWith('image/'));if(item){e.preventDefault();const f=item.getAsFile();if(f)submitPublicChatImage(f);}});
-  }
   $('#trackingChangeBtn')?.addEventListener('click',submitPublicAlteration);
   $('#trackingApproveBtn')?.addEventListener('click',submitPublicApproval);
-  $('#trackingNewOrderBtn')?.addEventListener('click',e=>{const href=e.currentTarget.getAttribute('href');if(href&&href!=='#'){e.preventDefault();navigateHash(href);}});
+  $('#trackingNewOrderBtn')?.addEventListener('click',e=>{const href=e.currentTarget.getAttribute('href');if(href&&href!=='#'){e.preventDefault();location.hash=href.slice(1);location.reload();}});
   $('#trackingChatForm')?.addEventListener('submit',e=>{e.preventDefault();submitPublicMessage();});
   $('#trackingChatText')?.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();submitPublicMessage();}});
+  $('#trackingChatFile')?.addEventListener('change',e=>setChatFilePreview(e.target,'#trackingChatFileLabel',e.target.files?.[0]));
+  $('#trackingChatText')?.addEventListener('paste',e=>{const f=[...(e.clipboardData?.files||[])].find(x=>x.type?.startsWith('image/'));if(f){e.preventDefault();setInputFile($('#trackingChatFile'),f);}});
   $('#trackingFeed')?.addEventListener('click',e=>{const pix=e.target.closest('[data-copy-pix]');if(pix){copyText(pix.dataset.copyPix);return;}const b=e.target.closest('[data-public-art]');if(b)modal(`<div class="image-modal"><button class="close-modal" data-close-modal>×</button><img src="${esc(b.dataset.publicArt)}" alt="Pré-visualização da arte"></div>`);});
   const token=(()=>{try{return decodeURIComponent(location.hash.slice('#pedido='.length));}catch{return ''}})();
   if(token)setupTrackingRealtime(token,true);
@@ -1593,7 +1530,7 @@ function openPublicCatalogPreview(found){
   $('#pubFiles').addEventListener('change',async e=>{const fs=await readFiles(e.target.files);$('#filePreview').innerHTML=fs.map(f=>`<span>${esc(f.name)} <small>${formatBytes(f.size)}</small></span>`).join('');$('#pubFiles')._files=fs;});
   $('#briefingForm').onsubmit=async e=>{e.preventDefault();if(!supabaseClient)initSupabaseClient();if(!supabaseClient){$('#publicMessage').textContent='Não foi possível conectar ao servidor. Verifique sua internet e atualize a página.';return;}const publicToken=briefingTokenFromHash();if(!publicToken){$('#publicMessage').textContent='Link de briefing inválido ou expirado. Solicite um novo link ao designer.';return;}const files=$('#pubFiles')._files||[];const persons=people.map(p=>({name:p.name,info:p.info,photo:p.photo?{name:p.photo.name,type:p.photo.type,size:p.photo.size}:null}));const catalogText=selectedCatalog.length?`Referências do catálogo: ${selectedCatalog.map(x=>x.title).join(', ')}`:'';const refsBase=$('#pubRefs').value.trim();const combinedRefs=[catalogText,refsBase].filter(Boolean).join('\n\n');const d={client:$('#pubName').value.trim(),whats:$('#pubWhats').value.trim(),project:$('#pubProject').value.trim(),deadline:$('#pubEvent').value,type:$('#pubType').value,texts:$('#pubTexts').value,people:persons,refs:combinedRefs,notes:$('#pubNotes').value};if(!d.client||!d.project){$('#publicMessage').textContent='Nome e projeto são obrigatórios.';return;}const btn=$('#briefingForm button[type="submit"]');if(btn){btn.disabled=true;btn.textContent='Enviando…';}try{const briefingId=crypto.randomUUID?.()||uid('brief');const uploaded=[];for(let i=0;i<files.length;i++){if(files[i].file)uploaded.push(await uploadBriefingFile(files[i].file,publicToken,briefingId,i));}for(let i=0;i<people.length;i++){if(people[i].photo?.file){const up=await uploadBriefingFile(people[i].photo.file,publicToken,briefingId,`p${i}`);d.people[i].photo=up;}}const {data:submitData,error}=await supabaseClient.rpc('submit_briefing',{p_public_token:publicToken,p_briefing_id:briefingId,p_client_name:d.client,p_whatsapp:d.whats,p_project_name:d.project,p_deadline:d.deadline||null,p_service_type:d.type,p_texts:d.texts,p_people:d.people,p_references_text:d.refs,p_notes:d.notes,p_files:uploaded});if(error)throw error;const trackingToken=submitData?.tracking_token||submitData?.trackingToken||'';$('#publicFormView').classList.add('hidden');$('#publicSuccess').classList.remove('hidden');$('#successProject').textContent=d.project;const trackBtn=$('#successTrackingBtn');if(trackBtn){trackBtn.href=trackingToken?`#pedido=${encodeURIComponent(trackingToken)}`:'#';trackBtn.classList.toggle('disabled',!trackingToken);trackBtn.dataset.trackingToken=trackingToken;}loadPublicProfile();window.scrollTo({top:0,behavior:'smooth'});}catch(err){console.error(err);$('#publicMessage').textContent=`Não foi possível enviar. ${err?.message||'Tente novamente.'}`;if(btn){btn.disabled=false;btn.textContent='Enviar briefing →';}}};
   $('#newPublicOrderBtn').onclick=()=>{ $('#publicSuccess').classList.add('hidden');$('#publicFormView').classList.remove('hidden');$('#briefingForm').reset();people=[];selectedCatalog=[];paintPeople();$('#filePreview').innerHTML='';$('#pubFiles')._files=[];$('#publicMessage').textContent='';const btn=$('#briefingForm button[type="submit"]');if(btn){btn.disabled=false;btn.textContent='Enviar briefing →';}loadPublicProfile();window.scrollTo({top:0,behavior:'smooth'});};
-  $('#successTrackingBtn')?.addEventListener('click',e=>{const href=e.currentTarget.getAttribute('href');if(!href||href==='#')return;e.preventDefault();navigateHash(href);});
+  $('#successTrackingBtn')?.addEventListener('click',e=>{const href=e.currentTarget.getAttribute('href');if(!href||href==='#')return;e.preventDefault();location.hash=href.slice(1);location.reload();});
   paintPeople();loadPublicProfile();
 }
 function exportBackup(){const payload={version:2,exportedAt:new Date().toISOString(),designer,orders,clients,quotes,notifications};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});downloadBlob(blob,`rafahstudio-backup-${todayISO()}.json`);toast('Backup exportado.');}
@@ -1601,13 +1538,15 @@ function importBackup(file){const r=new FileReader();r.onload=()=>{try{const p=J
 function downloadBlob(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000);}
 const RAFahPdfLogoSvg="\n\n<!-- Creator: CorelDRAW -->\n<svg xmlns=\"http://www.w3.org/2000/svg\" xml:space=\"preserve\" width=\"400px\" height=\"140px\" version=\"1.1\" style=\"shape-rendering:geometricPrecision; text-rendering:geometricPrecision; image-rendering:optimizeQuality; fill-rule:evenodd; clip-rule:evenodd\"\nviewBox=\"0 0 9.97 3.48\"\n xmlns:xlink=\"http://www.w3.org/1999/xlink\"\n xmlns:xodm=\"http://www.corel.com/coreldraw/odm/2003\">\n <defs>\n  <style type=\"text/css\">\n   <![CDATA[\n    .fil1 {fill:#0f2923}\n    .fil0 {fill:#0f2923;fill-rule:nonzero}\n    .fil2 {fill:url(#id0)}\n   ]]>\n  </style>\n  <linearGradient id=\"id0\" gradientUnits=\"userSpaceOnUse\" x1=\"0.09\" y1=\"2.68\" x2=\"1.04\" y2=\"3.24\">\n   <stop offset=\"0\" style=\"stop-opacity:1; stop-color:#0148FA\"/>\n   <stop offset=\"0.490196\" style=\"stop-opacity:1; stop-color:#029CFE\"/>\n   <stop offset=\"1\" style=\"stop-opacity:1; stop-color:#07D6FE\"/>\n  </linearGradient>\n </defs>\n <g id=\"Camada_x0020_1\">\n  <metadata id=\"CorelCorpID_0Corel-Layer\"/>\n  <path class=\"fil0\" d=\"M4.22 3.48c-0.11,0 -0.2,-0.02 -0.27,-0.07 -0.08,-0.05 -0.13,-0.12 -0.16,-0.21l0.13 -0.07c0.05,0.14 0.15,0.2 0.3,0.2 0.08,0 0.14,-0.01 0.18,-0.04 0.04,-0.03 0.06,-0.08 0.06,-0.13 0,-0.05 -0.02,-0.09 -0.06,-0.12 -0.04,-0.03 -0.11,-0.06 -0.2,-0.09 -0.05,-0.01 -0.09,-0.03 -0.11,-0.04 -0.03,0 -0.06,-0.02 -0.1,-0.04 -0.03,-0.02 -0.06,-0.03 -0.08,-0.05 -0.02,-0.02 -0.03,-0.05 -0.05,-0.08 -0.01,-0.04 -0.02,-0.07 -0.02,-0.11 0,-0.1 0.03,-0.18 0.1,-0.24 0.07,-0.06 0.16,-0.08 0.26,-0.08 0.09,0 0.16,0.02 0.23,0.06 0.07,0.05 0.12,0.11 0.15,0.18l-0.13 0.08c-0.04,-0.12 -0.13,-0.18 -0.25,-0.18 -0.07,0 -0.11,0.02 -0.15,0.05 -0.04,0.03 -0.06,0.07 -0.06,0.12 0,0.05 0.02,0.09 0.05,0.11 0.04,0.03 0.1,0.06 0.19,0.08 0.03,0.01 0.05,0.02 0.06,0.03 0.02,0 0.04,0.01 0.07,0.02 0.02,0.01 0.04,0.02 0.06,0.02 0.01,0.01 0.03,0.02 0.05,0.03 0.02,0.01 0.04,0.02 0.05,0.04 0.01,0.01 0.02,0.02 0.04,0.04 0.01,0.01 0.02,0.03 0.03,0.04 0.01,0.02 0.01,0.04 0.02,0.06 0,0.02 0,0.04 0,0.07 0,0.1 -0.03,0.18 -0.11,0.23 -0.07,0.06 -0.16,0.09 -0.28,0.09zm0.97 -0.69l-0.21 0 0 0.44c0,0.04 0.01,0.06 0.02,0.08 0.02,0.02 0.04,0.03 0.07,0.03 0.04,0 0.08,0 0.12,-0.01l0 0.13c-0.12,0.02 -0.21,0.01 -0.27,-0.03 -0.05,-0.03 -0.08,-0.1 -0.08,-0.2l0 -0.44 -0.16 0 0 -0.14 0.16 0 0 -0.18 0.14 -0.05 0 0.23 0.21 0 0 0.14zm0.73 -0.14l0.15 0 0 0.81 -0.15 0 0 -0.12c-0.05,0.1 -0.14,0.14 -0.26,0.14 -0.09,0 -0.17,-0.03 -0.23,-0.09 -0.05,-0.06 -0.08,-0.14 -0.08,-0.24l0 -0.5 0.14 0 0 0.49c0,0.07 0.02,0.12 0.05,0.15 0.04,0.04 0.09,0.06 0.15,0.06 0.07,0 0.13,-0.02 0.17,-0.07 0.04,-0.04 0.06,-0.11 0.06,-0.2l0 -0.43zm1.03 -0.32l0.14 0 0 1.13 -0.14 0 0 -0.14c-0.07,0.11 -0.17,0.16 -0.31,0.16 -0.11,0 -0.21,-0.04 -0.29,-0.12 -0.08,-0.08 -0.12,-0.19 -0.12,-0.3 0,-0.12 0.04,-0.22 0.12,-0.31 0.08,-0.08 0.18,-0.12 0.29,-0.12 0.14,0 0.24,0.05 0.31,0.16l0 -0.46zm-0.29 1.02c0.08,0 0.15,-0.03 0.21,-0.09 0.05,-0.05 0.08,-0.12 0.08,-0.2 0,-0.09 -0.03,-0.16 -0.08,-0.21 -0.06,-0.06 -0.13,-0.08 -0.21,-0.08 -0.08,0 -0.15,0.02 -0.2,0.08 -0.06,0.05 -0.08,0.12 -0.08,0.21 0,0.08 0.02,0.15 0.08,0.2 0.05,0.06 0.12,0.09 0.2,0.09zm0.72 -0.85c-0.03,0 -0.05,-0.01 -0.07,-0.02 -0.02,-0.02 -0.03,-0.05 -0.03,-0.07 0,-0.03 0.01,-0.05 0.03,-0.07 0.02,-0.02 0.04,-0.03 0.07,-0.03 0.02,0 0.05,0.01 0.06,0.03 0.02,0.02 0.03,0.04 0.03,0.07 0,0.02 -0.01,0.05 -0.03,0.07 -0.01,0.01 -0.04,0.02 -0.06,0.02zm-0.07 0.96l0 -0.81 0.14 0 0 0.81 -0.14 0zm1.04 -0.1c-0.09,0.08 -0.19,0.12 -0.31,0.12 -0.11,0 -0.22,-0.04 -0.3,-0.12 -0.08,-0.08 -0.12,-0.18 -0.12,-0.3 0,-0.12 0.04,-0.23 0.12,-0.31 0.08,-0.08 0.19,-0.12 0.3,-0.12 0.12,0 0.22,0.04 0.31,0.12 0.08,0.08 0.12,0.19 0.12,0.31 0,0.12 -0.04,0.22 -0.12,0.3zm-0.31 -0.02c0.09,0 0.15,-0.02 0.21,-0.08 0.05,-0.05 0.08,-0.12 0.08,-0.2 0,-0.09 -0.03,-0.15 -0.08,-0.21 -0.06,-0.06 -0.12,-0.08 -0.21,-0.08 -0.08,0 -0.14,0.02 -0.2,0.08 -0.05,0.06 -0.08,0.12 -0.08,0.21 0,0.08 0.03,0.15 0.08,0.2 0.06,0.06 0.12,0.08 0.2,0.08z\"/>\n  <path class=\"fil0\" d=\"M6.07 0.8l0.31 0 0 1.19 -0.31 0 0 -0.14c-0.09,0.11 -0.22,0.17 -0.38,0.17 -0.16,0 -0.3,-0.06 -0.41,-0.18 -0.11,-0.12 -0.17,-0.27 -0.17,-0.45 0,-0.17 0.06,-0.32 0.17,-0.44 0.11,-0.12 0.25,-0.18 0.41,-0.18 0.16,0 0.29,0.06 0.38,0.17l0 -0.14zm-0.56 0.83c0.06,0.07 0.14,0.1 0.23,0.1 0.1,0 0.18,-0.03 0.24,-0.1 0.06,-0.06 0.09,-0.14 0.09,-0.24 0,-0.09 -0.03,-0.17 -0.09,-0.24 -0.06,-0.06 -0.14,-0.09 -0.24,-0.09 -0.09,0 -0.17,0.03 -0.23,0.09 -0.06,0.07 -0.09,0.15 -0.09,0.24 0,0.1 0.03,0.18 0.09,0.24z\"/>\n  <path class=\"fil0\" d=\"M7.29 0.59c-0.17,-0.01 -0.25,0.05 -0.25,0.2l0 0.01 0.25 0 0 0.3 -0.25 0 0 0.89 -0.31 0 0 -0.89 -0.17 0 0 -0.3 0.17 0 0 -0.01c0,-0.17 0.05,-0.29 0.14,-0.38 0.1,-0.09 0.24,-0.13 0.42,-0.11l0 0.29z\"/>\n  <path class=\"fil0\" d=\"M8.28 0.8l0.31 0 0 1.19 -0.31 0 0 -0.14c-0.09,0.11 -0.22,0.17 -0.38,0.17 -0.16,0 -0.29,-0.06 -0.41,-0.18 -0.11,-0.12 -0.17,-0.27 -0.17,-0.45 0,-0.17 0.06,-0.32 0.17,-0.44 0.12,-0.12 0.25,-0.18 0.41,-0.18 0.16,0 0.29,0.06 0.38,0.17l0 -0.14zm-0.56 0.83c0.06,0.07 0.14,0.1 0.24,0.1 0.09,0 0.17,-0.03 0.23,-0.1 0.06,-0.06 0.09,-0.14 0.09,-0.24 0,-0.09 -0.03,-0.17 -0.09,-0.24 -0.06,-0.06 -0.14,-0.09 -0.23,-0.09 -0.1,0 -0.18,0.03 -0.24,0.09 -0.06,0.07 -0.09,0.15 -0.09,0.24 0,0.1 0.03,0.18 0.09,0.24z\"/>\n  <path class=\"fil0\" d=\"M9.53 0.77c0.12,0 0.23,0.04 0.32,0.13 0.08,0.09 0.12,0.21 0.12,0.36l0 0.73 -0.3 0 0 -0.69c0,-0.08 -0.02,-0.14 -0.07,-0.18 -0.04,-0.05 -0.1,-0.07 -0.17,-0.07 -0.08,0 -0.14,0.03 -0.19,0.08 -0.04,0.05 -0.07,0.12 -0.07,0.22l0 0.64 -0.3 0 0 -1.66 0.3 0 0 0.6c0.08,-0.11 0.19,-0.16 0.36,-0.16z\"/>\n  <g id=\"_2555488677520\">\n   <path class=\"fil1\" d=\"M4.12 1.41l-0.07 0c-0.14,0 -0.26,-0.12 -0.26,-0.26l0 -0.82 0.66 0c0.16,0 0.29,0.05 0.39,0.16 0.11,0.11 0.17,0.24 0.17,0.39 0,0.1 -0.03,0.2 -0.09,0.28 -0.06,0.09 -0.14,0.16 -0.23,0.2l0.36 0.63 -0.35 0 -0.33 -0.58 -0.25 0zm0 -0.78l0 0.49 0.33 0c0.07,0 0.12,-0.02 0.16,-0.07 0.05,-0.05 0.07,-0.1 0.07,-0.17 0,-0.07 -0.02,-0.13 -0.07,-0.18 -0.04,-0.04 -0.09,-0.07 -0.16,-0.07l-0.33 0z\"/>\n   <path class=\"fil1\" d=\"M4.12 1.99l0 0 0 -0.33 -0.33 0 0 0c0,0.18 0.15,0.33 0.33,0.33z\"/>\n  </g>\n  <path class=\"fil1\" d=\"M0.91 0.72l0 0.96c-0.44,0 -0.91,-0.38 -0.91,-0.85l0 -0.11 0 -0.72 2.44 0c0.44,0 0.79,0.38 0.79,0.83l0 0.86c0,0.46 -0.35,0.83 -0.79,0.83l-0.01 0 0 0 0.41 0c0.21,0 0.39,0.19 0.39,0.42l0 0.13c0,0.22 -0.18,0.41 -0.39,0.41l-0.41 0c-0.41,0 -0.74,-0.34 -0.74,-0.77l0 -0.19 0 -0.84 0.31 0c0.22,0 0.4,-0.19 0.4,-0.42l0 -0.01c0,-0.23 -0.18,-0.42 -0.4,-0.42l-0.31 0 -0.78 0 0 0.85 0 -0.96z\"/>\n  <path class=\"fil2\" d=\"M1.12 2.44l-1.12 0 0 0c0,0.57 0.47,1.04 1.04,1.04l0.08 0 0 -1.04z\"/>\n </g>\n</svg>\n";
 function pdfWindow(title,body){
-  const html=`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${esc(title)}</title>
+  const w=window.open('','_blank','noopener,noreferrer');
+  if(!w){toast('Permita pop-ups para gerar o PDF.','error');return;}
+  w.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${esc(title)}</title>
   <style>
   @page{size:A4;margin:12mm}
   *{box-sizing:border-box}html,body{margin:0;padding:0;background:#fff;color:#16231f}
   body{font-family:Arial,Helvetica,sans-serif;font-size:10.5pt;line-height:1.45}
   .pdf{width:100%}.pdf-header{display:grid;grid-template-columns:1fr auto;gap:18px;align-items:center;padding:0 0 14px;border-bottom:3px solid #12bfe8}
-  .pdf-logo{width:92px;height:auto;display:block;max-height:36px}.pdf-kicker{font-size:8pt;letter-spacing:.18em;color:#178fa9;font-weight:800;text-transform:uppercase}
+  .pdf-logo{width:145px;height:auto;display:block}.pdf-kicker{font-size:8pt;letter-spacing:.18em;color:#178fa9;font-weight:800;text-transform:uppercase}
   .pdf-title{font-size:22pt;line-height:1.05;margin:5px 0 3px;color:#10211d}.pdf-sub{font-size:8.5pt;color:#63756f}
   .pdf-code{text-align:right}.pdf-code b{font-size:9pt;letter-spacing:.12em;color:#178fa9}.pdf-code span{display:block;font-size:8pt;color:#63756f;margin-top:4px}
   .pdf-status{margin:15px 0;padding:10px 12px;border:1px solid #cce5df;border-left:5px solid #12bfe8;border-radius:10px;background:#f3faf8}
@@ -1618,40 +1557,36 @@ function pdfWindow(title,body){
   .pdf-box{border:1px solid #dce8e4;border-radius:10px;padding:11px;background:#f8fbfa;white-space:pre-wrap;min-height:45px}
   .pdf-table{width:100%;border-collapse:collapse;border:1px solid #dce8e4;border-radius:10px;overflow:hidden}.pdf-table th{text-align:left;font-size:7.5pt;text-transform:uppercase;letter-spacing:.06em;color:#64766f;background:#eef6f3;padding:8px}.pdf-table td{padding:8px;border-top:1px solid #e2ebe8}.pdf-total{font-size:17pt;font-weight:800;color:#0a7f98;text-align:right;margin-top:12px}
   .pdf-footer{margin-top:25px;padding-top:10px;border-top:1px solid #dce8e4;display:flex;justify-content:space-between;gap:10px;color:#73837e;font-size:7.5pt}
-  .pdf-note{font-size:8pt;color:#60736c}.pdf-sign{display:none}
+  .pdf-note{font-size:8pt;color:#60736c}.pdf-sign{margin-top:28px;display:grid;grid-template-columns:1fr 1fr;gap:30px}.pdf-sign div{border-top:1px solid #8ca29b;padding-top:6px;color:#64766f;font-size:8pt}
   @media print{body{print-color-adjust:exact;-webkit-print-color-adjust:exact}.pdf-box,.pdf-status,.pdf-table th{print-color-adjust:exact;-webkit-print-color-adjust:exact}}
   </style></head><body><div class="pdf">${body}<div class="pdf-footer"><span>RafahStudio • documento profissional</span><span>Gerado em ${new Date().toLocaleString('pt-BR')}</span></div></div>
-  <script>window.addEventListener('load',()=>setTimeout(()=>window.print(),350));<\/script></body></html>`;
-  const blob=new Blob([html],{type:'text/html;charset=utf-8'});
-  const url=URL.createObjectURL(blob);
-  const w=window.open(url,'_blank');
-  if(!w){URL.revokeObjectURL(url);toast('Permita pop-ups para gerar o PDF.','error');return;}
-  setTimeout(()=>URL.revokeObjectURL(url),60000);
+  <script>window.addEventListener('load',()=>setTimeout(()=>window.print(),350));<\/script></body></html>`);
+  w.document.close();
 }
 
 function generateOrderPDF(id){
   const o=orders.find(x=>String(x.id)===String(id));if(!o)return;
   const b=o.briefing||{};
-  const orderNumber=getOrderPaperNumber(o, orders);
   const people=(b.people||[]).map(p=>`<tr><td>${esc(p.name)}</td><td>${esc(p.info||'—')}</td></tr>`).join('');
-  const body=`<header class="pdf-header"><div><div class="pdf-logo">${RAFahPdfLogoSvg}</div><div class="pdf-kicker">RafahStudio • documento de projeto</div><div class="pdf-title">${esc(o.project)}</div><div class="pdf-sub">${esc(designer.name||'Designer')}${designer.brand&&designer.brand!=='RafahStudio'?' • '+esc(designer.brand):''}</div></div><div class="pdf-code"><b>PEDIDO</b><span>Nº ${esc(orderNumber)}</span></div></header>
+  const body=`<header class="pdf-header"><div><div class="pdf-logo">${RAFahPdfLogoSvg}</div><div class="pdf-kicker">RafahStudio • documento de projeto</div><div class="pdf-title">${esc(o.project)}</div><div class="pdf-sub">${esc(designer.name||'Designer')}${designer.brand&&designer.brand!=='RafahStudio'?' • '+esc(designer.brand):''}</div></div><div class="pdf-code"><b>PEDIDO</b><span>${esc(o.id)}</span></div></header>
   <div class="pdf-status"><b>${esc(o.status)}</b><span>${o.paid||o.status==='Pago'?'PAGAMENTO RECEBIDO':'PAGAMENTO PENDENTE'}</span></div>
   <div class="pdf-grid"><div class="pdf-field"><label>Cliente</label><strong>${esc(o.client)}</strong></div><div class="pdf-field"><label>Serviço</label><strong>${esc(o.type)}</strong></div><div class="pdf-field"><label>Prazo</label><strong>${dateLabel(o.deadline)}</strong></div><div class="pdf-field"><label>Valor</label><strong>${money(o.value)}</strong></div></div>
   <section class="pdf-section"><h2>Briefing</h2><div class="pdf-box">${esc(b.texts||b.notes||'Sem briefing adicional.')}</div></section>
   ${b.refs?`<section class="pdf-section"><h2>Referências</h2><div class="pdf-box">${esc(b.refs)}</div></section>`:''}
   ${b.notes?`<section class="pdf-section"><h2>Observações</h2><div class="pdf-box">${esc(b.notes)}</div></section>`:''}
-  ${b.people?.length?`<section class="pdf-section"><h2>Pessoas da arte</h2><table class="pdf-table"><thead><tr><th>Nome</th><th>Informação</th></tr></thead><tbody>${people}</tbody></table></section>`:''}`;
+  ${b.people?.length?`<section class="pdf-section"><h2>Pessoas da arte</h2><table class="pdf-table"><thead><tr><th>Nome</th><th>Informação</th></tr></thead><tbody>${people}</tbody></table></section>`:''}
+  <div class="pdf-sign"><div>Cliente / responsável</div><div>${esc(designer.name||'Designer')}</div></div>`;
   pdfWindow(`Pedido — ${o.project}`,body);
 }
 function generateQuotePDF(id){
   const q=quotes.find(x=>String(x.id)===String(id));if(!q)return;
-  const quoteNumber=getQuotePaperNumber(q, quotes);
   const rows=(q.items||[]).map(i=>`<tr><td>${esc(i.desc||'Serviço')}</td><td>${i.qty}</td><td>${money(i.price)}</td><td>${money((Number(i.qty)||0)*(Number(i.price)||0))}</td></tr>`).join('');
-  const body=`<header class="pdf-header"><div><div class="pdf-logo">${RAFahPdfLogoSvg}</div><div class="pdf-kicker">RafahStudio • proposta comercial</div><div class="pdf-title">${esc(q.project)}</div><div class="pdf-sub">${esc(designer.name||'Designer')}${designer.brand&&designer.brand!=='RafahStudio'?' • '+esc(designer.brand):''}</div></div><div class="pdf-code"><b>ORÇAMENTO</b><span>Nº ${esc(quoteNumber)}</span></div></header>
+  const body=`<header class="pdf-header"><div><div class="pdf-logo">${RAFahPdfLogoSvg}</div><div class="pdf-kicker">RafahStudio • proposta comercial</div><div class="pdf-title">${esc(q.project)}</div><div class="pdf-sub">${esc(designer.name||'Designer')}${designer.brand&&designer.brand!=='RafahStudio'?' • '+esc(designer.brand):''}</div></div><div class="pdf-code"><b>ORÇAMENTO</b><span>${esc(q.id)}</span></div></header>
   <div class="pdf-status"><b>${esc(q.status)}</b><span>VALIDADE • ${dateLabel(q.valid)}</span></div>
   <div class="pdf-grid"><div class="pdf-field"><label>Cliente</label><strong>${esc(q.client)}</strong></div><div class="pdf-field"><label>Projeto</label><strong>${esc(q.project)}</strong></div></div>
   <section class="pdf-section"><h2>Itens da proposta</h2><table class="pdf-table"><thead><tr><th>Descrição</th><th>Qtd.</th><th>Unitário</th><th>Total</th></tr></thead><tbody>${rows}</tbody></table><div class="pdf-total">Total: ${money(q.total)}</div></section>
-  ${q.terms?`<section class="pdf-section"><h2>Condições</h2><div class="pdf-box">${esc(q.terms)}</div></section>`:''}`;
+  ${q.terms?`<section class="pdf-section"><h2>Condições</h2><div class="pdf-box">${esc(q.terms)}</div></section>`:''}
+  <div class="pdf-sign"><div>Cliente / responsável</div><div>${esc(designer.name||'Designer')}</div></div>`;
   pdfWindow(`Orçamento — ${q.project}`,body);
 }
 
@@ -1741,7 +1676,6 @@ function handleDelegated(e){const a=e.target.closest('[data-action]');if(a){cons
  const copyPix=e.target.closest('[data-copy-pix]');if(copyPix){copyText(copyPix.dataset.copyPix);return;}
  const notif=e.target.closest('[data-notification]');if(notif){const n=notifications.find(x=>x.id===notif.dataset.notification);if(n){n.read=true;persist();renderNotifications();if(n.linkId)openOrderView(n.linkId);}}
  const dl=e.target.closest('[data-download-file]');if(dl){const [oid,idx]=dl.dataset.downloadFile.split(':');const o=orders.find(x=>x.id===oid),f=o?.files?.[Number(idx)];if(f?.dataUrl){const a=document.createElement('a');a.href=f.dataUrl;a.download=f.name||'arquivo';document.body.appendChild(a);a.click();a.remove();}else if(f?.url){window.open(f.url,'_blank','noopener,noreferrer');}else toast('Arquivo original não possui uma URL disponível.','error');}
- const chatImg=e.target.closest('[data-chat-image]');if(chatImg){modal(`<div class="image-modal"><button class="close-modal" data-close-modal>×</button><img src="${esc(chatImg.dataset.chatImage)}" alt="Imagem da conversa"></div>`);return;}
  const preview=e.target.closest('[data-preview-file]');if(preview)modal(`<div class="image-modal"><button class="close-modal" data-close-modal>×</button><img src="${preview.src}" alt="Pré-visualização"></div>`);
  const tab=e.target.closest('#orderTabs button');if(tab){orderFilter=tab.dataset.filter;renderOrders();}
   const closeButton=e.target.closest('.close-modal,[data-close-modal]');if(closeButton)closeModal();
@@ -1801,50 +1735,36 @@ async function registerServiceWorker(){
   try{await navigator.serviceWorker.register('./sw.js');}catch(e){console.warn('Service Worker:',e);}
 }
 async function init(){
-  setupEvents();setupPublic();setupTracking();setupConversations();registerServiceWorker();document.body.classList.add('dark');
-  window.addEventListener('popstate',()=>handlePublicHash());
-  window.addEventListener('hashchange',()=>handlePublicHash());
-  if(!supabaseClient){initSupabaseClient();}
-  // Public briefing/tracking links never require designer authentication.
-  if(handlePublicHash())return;
-  let session=null;
-  for(let attempt=0;attempt<3&&!session;attempt++){
-    try{
-      const result=await supabaseClient.auth.getSession();
-      session=result?.data?.session||null;
-      if(!session&&attempt===0){
-        try{const refreshed=await supabaseClient.auth.refreshSession();session=refreshed?.data?.session||null;}catch(e){}
-      }
-      if(!session&&attempt<2)await new Promise(r=>setTimeout(r,400));
-    }catch(e){console.warn('[RafahStudio] Sessão:',e);if(attempt<2)await new Promise(r=>setTimeout(r,400));}
-  }
-  if(session?.user){
-    try{await establishAuthenticatedUser(session.user);showApp();startLiveSync();return;}
-    catch(e){console.warn('[RafahStudio] Inicialização da conta:',e);}
-  }
-  // Do not destroy the cached account marker on a transient network/auth failure.
-  currentUser=read(KEYS.user,null);
-  if(currentUser){
-    // Mantém a interface da conta em caso de falha transitória; a próxima sessão válida sincroniza os dados.
-    showApp();
+  // Public links are completely independent from the designer login.
+  // Handle them before booting the private workspace so a missing/expired
+  // Auth session can never replace a valid public briefing/tracking screen.
+  if(isPublicHashRoute()){
+    setupPublic();
+    setupTracking();
+    registerServiceWorker();
+    document.body.classList.add('dark');
+    if(location.hash.startsWith('#briefing=')){
+      await loadPublicProfile();
+      return;
+    }
+    await loadPublicTracking();
     return;
   }
+
+  setupEvents();setupPublic();setupTracking();setupConversations();registerServiceWorker();document.body.classList.add('dark');
+  if(!supabaseClient)initSupabaseClient();
+  try{
+    const {data}=await supabaseClient.auth.getSession();
+    if(data?.session?.user){
+      await establishAuthenticatedUser(data.session.user);
+      showApp();
+      startLiveSync();
+      return;
+    }
+  }catch(e){console.warn('[RafahStudio] Sessão:',e);}
+  currentUser=read(KEYS.user,null);
   showAuth('login');
 }
-
-// Keep the UI in sync with real Auth events without logging the user out on a transient error.
-try{
-  supabaseClient?.auth.onAuthStateChange((event,session)=>{
-    if(event==='SIGNED_IN'&&session?.user&&!currentUser){
-      if(isPublicHashRoute()) return;
-      establishAuthenticatedUser(session.user).then(()=>{showApp();startLiveSync();});
-    }
-    if(event==='SIGNED_OUT'){
-      currentUser=null;localStorage.removeItem(KEYS.user);
-      if(!isPublicHashRoute()) showAuth('login');
-    }
-  });
-}catch(e){}
 
 init();
 

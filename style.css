@@ -891,15 +891,6 @@ body{background:
   }
 }
 
-
-/* RAFahStudio 1.6 — correção definitiva do quadro de pedidos */
-.orders-board-wrap{min-height:0!important;overflow:hidden!important}
-.orders-board{height:100%!important;min-height:0!important;display:flex!important;align-items:stretch!important;overflow-x:auto!important;overflow-y:hidden!important}
-.order-stage{height:100%!important;min-height:0!important;display:flex!important;flex-direction:column!important}
-.order-stage-body{display:flex!important;flex-direction:column!important;align-items:stretch!important;gap:12px!important;flex:1 1 auto!important;min-height:0!important;height:auto!important;max-height:none!important;overflow-y:auto!important;overflow-x:hidden!important}
-.order-stage-body>.order-card{flex:0 0 auto!important;width:100%!important}
-@media(max-width:600px){.order-stage-body{gap:10px!important;-webkit-overflow-scrolling:touch!important}.order-card-art-featured{height:155px!important;min-height:155px!important}}
-
 /* RAFahStudio 1.5 — limpeza visual, cartões de pedidos e PDF */
 .order-stage-body{display:grid!important;grid-auto-rows:max-content!important;align-content:start!important;gap:12px!important;}
 .order-card{display:flex!important;flex-direction:column!important;gap:0!important;min-height:0!important;height:auto!important;box-sizing:border-box!important;overflow:hidden!important;}
@@ -919,21 +910,9 @@ body{background:
   .tracking-designer-avatar{width:23px;height:23px;}
 }
 
-.conversation-client{cursor:pointer!important;user-select:none}.conversation-list{overflow-y:auto}.conversation-client:active{transform:scale(.995)}
-/* 1.6 FINAL OVERRIDE: cards must stack naturally and scroll inside each stage. */
-.orders-board-wrap{overflow:hidden!important;min-height:0!important}
-.orders-board{height:100%!important;min-height:0!important;display:flex!important;align-items:stretch!important;overflow-x:auto!important;overflow-y:hidden!important}
-.order-stage{height:100%!important;min-height:0!important;display:flex!important;flex-direction:column!important}
-.order-stage-body{display:flex!important;flex-direction:column!important;align-items:stretch!important;gap:12px!important;flex:1 1 auto!important;min-height:0!important;height:auto!important;max-height:none!important;overflow-y:auto!important;overflow-x:hidden!important}
-.order-stage-body>.order-card{position:relative!important;display:flex!important;flex:0 0 auto!important;width:100%!important;height:auto!important;min-height:0!important;transform:none!important}
-@media(max-width:600px){.order-stage-body{gap:10px!important;-webkit-overflow-scrolling:touch!important}.order-card-art-featured{height:155px!important;min-height:155px!important}}
 
-/* RafahStudio 1.7 — microinterações leves e chat com imagens */
-.breadcrumb{display:none!important}
-.order-card-number{margin-left:auto;font-size:9px;font-weight:800;letter-spacing:.08em;color:#70e8f5;background:rgba(8,200,255,.07);border:1px solid rgba(8,200,255,.13);padding:5px 7px;border-radius:999px}
-.order-card{isolation:isolate}.order-card:after{content:"";position:absolute;inset:0;pointer-events:none;border-radius:inherit;background:linear-gradient(115deg,transparent 35%,rgba(85,232,255,.035),transparent 65%);transform:translateX(-120%);transition:transform .65s ease;z-index:-1}.order-card:hover:after{transform:translateX(120%)}
-.btn,.icon-btn,.nav-item,.quick-btn,.conversation-client,.tracking-chat-fab{transition:transform .18s ease,box-shadow .22s ease,border-color .22s ease,background .22s ease}
-.btn:hover,.quick-btn:hover{transform:translateY(-1px);box-shadow:0 8px 22px rgba(8,200,255,.07)}
-.chat-image-preview{display:block;border:0;padding:0;margin-top:8px;background:transparent;max-width:min(360px,100%);border-radius:13px;overflow:hidden;cursor:pointer}.chat-image-preview img{display:block;width:100%;height:auto;max-height:280px;object-fit:cover;transition:transform .25s ease,filter .25s ease}.chat-image-preview:hover img{transform:scale(1.02);filter:brightness(1.05)}
-.chat-attach-btn{white-space:nowrap}
-@media(prefers-reduced-motion:reduce){.order-card:after{display:none}.btn,.icon-btn,.nav-item,.quick-btn,.conversation-client,.tracking-chat-fab,.chat-image-preview img{transition:none!important;transform:none!important}}
+/* Chat attachments — lightweight */
+.chat-compose-tools{display:flex;align-items:center;justify-content:flex-end;gap:7px;flex-wrap:wrap}.chat-attach-btn{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);background:rgba(255,255,255,.025);color:var(--ink);padding:9px 11px;border-radius:12px;cursor:pointer;font-size:11px}.chat-attach-btn input{display:none}.chat-attach-btn span{color:var(--muted);max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.chat-file-card{display:flex;align-items:center;gap:9px;margin-top:8px;padding:9px 10px;border:1px solid var(--line);border-radius:12px;background:rgba(8,200,255,.045);color:var(--ink);text-decoration:none}.chat-file-card span{font-size:18px}.chat-file-card b{font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}.chat-file-card small{font-size:9px;color:#55e8ff}.tracking-chat-form .chat-compose-tools{justify-content:space-between}
+@media(max-width:800px){.chat-compose-tools{width:100%}.chat-attach-btn{flex:1;justify-content:center}.chat-compose-tools .btn{flex:0 0 auto}}
+
+.chat-image-preview{display:block;margin-top:8px;border:1px solid var(--line);border-radius:13px;overflow:hidden;background:rgba(8,200,255,.035);color:var(--muted);text-decoration:none}.chat-image-preview img{display:block;width:min(260px,100%);max-height:240px;object-fit:cover}.chat-image-preview span{display:block;padding:6px 9px;font-size:9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
