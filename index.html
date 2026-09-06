@@ -105,7 +105,7 @@
     <main class="main">
       <header class="topbar">
         <button class="mobile-menu icon-btn" id="mobileMenu">☰</button>
-        <div class="breadcrumb"><span id="pageEyebrow">VISÃO GERAL</span><b id="pageTitle">Dashboard</b></div>
+        
         <div class="top-actions">
           <label class="global-search"><span>⌕</span><input id="globalSearch" placeholder="Buscar em pedidos, clientes e orçamentos..."></label>
           <button class="icon-btn notification-trigger" id="notificationBtn" title="Notificações"><span>♧</span><em id="notifyCount">0</em></button>
@@ -127,7 +127,7 @@
 
       <section id="pedidos" class="page">
         <div class="page-head"><div><span class="eyebrow">PROJETOS</span><h1>Pedidos</h1><p>Organize a produção, acompanhe o status e entregue com segurança.</p></div><button class="btn primary" data-action="new-order">+ Novo pedido</button></div>
-        <div class="toolbar"><label class="search-box"><span>⌕</span><input id="orderSearch" placeholder="Buscar por projeto, cliente ou serviço..."></label><button class="btn secondary" id="copyBriefingBtn">↗ Copiar link do briefing</button><button class="btn secondary" data-open-trash>♻ Lixeira</button><select id="orderSort"><option value="recent">Mais recentes</option><option value="deadline">Prazo mais próximo</option><option value="value">Maior valor</option><option value="oldest">Mais antigos</option></select></div>
+        <div class="toolbar"><label class="search-box"><span>⌕</span><input id="orderSearch" placeholder="Buscar por nº, projeto, cliente ou serviço..."></label><button class="btn secondary" id="copyBriefingBtn">↗ Copiar link do briefing</button><button class="btn secondary" data-open-trash>♻ Lixeira</button><select id="orderSort"><option value="recent">Mais recentes</option><option value="deadline">Prazo mais próximo</option><option value="value">Maior valor</option><option value="oldest">Mais antigos</option></select></div>
         <div id="briefingLinkBox" class="link-box hidden"></div>
         <div class="status-tabs" id="orderTabs"><button class="active" data-filter="all">Todos <em id="countAll">0</em></button><button data-filter="Novo">Novo <em id="countNovo">0</em></button><button data-filter="Em andamento">Em andamento <em id="countDoing">0</em></button><button data-filter="Esperando aprovação">Esperando aprovação <em id="countApproval">0</em></button><button data-filter="Alteração">Alteração <em id="countChange">0</em></button><button data-filter="Entregue">Entregue <em id="countDelivered">0</em></button><button data-filter="Pago">Pago <em id="countPaid">0</em></button><button data-filter="Finalizado">Finalizado <em id="countFinalized">0</em></button></div>
         <div class="table-card orders-board-wrap"><div id="ordersTable" class="orders-board"></div></div>

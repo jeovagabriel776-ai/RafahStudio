@@ -575,6 +575,21 @@ begin
   return v_id;
 end $$;
 
+drop function if exists public.submit_order_message_with_image(text,text,text);
+create or replace function public.submit_order_message_with_image(p_tracking_token text,p_message text,p_image_url text)
+returns bigint language plpgsql security definer set search_path=public as $$
+declare t public.order_tracking%rowtype; v_id bigint;
+begin
+  select * into t from public.order_tracking where tracking_token=p_tracking_token limit 1;
+  if t.tracking_token is null then raise exception 'Pedido não encontrado.'; end if;
+  if t.status in ('Pago','Finalizado') then raise exception 'Este pedido já foi finalizado.'; end if;
+  if nullif(trim(coalesce(p_message,'')),'') is null and nullif(trim(coalesce(p_image_url,'')),'') is null then raise exception 'Envie uma mensagem ou imagem.'; end if;
+  insert into public.order_tracking_events(tracking_token,owner_secret,order_id,author,kind,message,image_url)
+  values(t.tracking_token,t.owner_secret,t.order_id,'client','message',coalesce(nullif(trim(p_message),''),'Imagem enviada.'),coalesce(p_image_url,'')) returning id into v_id;
+  update public.order_tracking set updated_at=now() where tracking_token=p_tracking_token;
+  return v_id;
+end $$;
+
 drop function if exists public.submit_order_approval(text,text);
 create or replace function public.submit_order_approval(p_tracking_token text,p_message text)
 returns bigint language plpgsql security definer set search_path=public as $$
@@ -619,6 +634,7 @@ grant execute on function public.get_order_tracking_events(text) to anon,authent
 grant execute on function public.submit_order_alteration(text,text) to anon,authenticated;
 grant execute on function public.submit_order_approval(text,text) to anon,authenticated;
 grant execute on function public.submit_order_message(text,text) to anon,authenticated;
+grant execute on function public.submit_order_message_with_image(text,text,text) to anon,authenticated;
 grant execute on function public.add_order_tracking_event(text,text,text,text,text,jsonb) to authenticated;
 grant execute on function public.get_order_tracking_events_for_owner(text) to authenticated;
 
