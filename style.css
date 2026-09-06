@@ -891,6 +891,15 @@ body{background:
   }
 }
 
+
+/* RAFahStudio 1.6 — correção definitiva do quadro de pedidos */
+.orders-board-wrap{min-height:0!important;overflow:hidden!important}
+.orders-board{height:100%!important;min-height:0!important;display:flex!important;align-items:stretch!important;overflow-x:auto!important;overflow-y:hidden!important}
+.order-stage{height:100%!important;min-height:0!important;display:flex!important;flex-direction:column!important}
+.order-stage-body{display:flex!important;flex-direction:column!important;align-items:stretch!important;gap:12px!important;flex:1 1 auto!important;min-height:0!important;height:auto!important;max-height:none!important;overflow-y:auto!important;overflow-x:hidden!important}
+.order-stage-body>.order-card{flex:0 0 auto!important;width:100%!important}
+@media(max-width:600px){.order-stage-body{gap:10px!important;-webkit-overflow-scrolling:touch!important}.order-card-art-featured{height:155px!important;min-height:155px!important}}
+
 /* RAFahStudio 1.5 — limpeza visual, cartões de pedidos e PDF */
 .order-stage-body{display:grid!important;grid-auto-rows:max-content!important;align-content:start!important;gap:12px!important;}
 .order-card{display:flex!important;flex-direction:column!important;gap:0!important;min-height:0!important;height:auto!important;box-sizing:border-box!important;overflow:hidden!important;}
@@ -909,3 +918,12 @@ body{background:
   .order-card-art-featured{height:155px!important;min-height:155px!important;}
   .tracking-designer-avatar{width:23px;height:23px;}
 }
+
+.conversation-client{cursor:pointer!important;user-select:none}.conversation-list{overflow-y:auto}.conversation-client:active{transform:scale(.995)}
+/* 1.6 FINAL OVERRIDE: cards must stack naturally and scroll inside each stage. */
+.orders-board-wrap{overflow:hidden!important;min-height:0!important}
+.orders-board{height:100%!important;min-height:0!important;display:flex!important;align-items:stretch!important;overflow-x:auto!important;overflow-y:hidden!important}
+.order-stage{height:100%!important;min-height:0!important;display:flex!important;flex-direction:column!important}
+.order-stage-body{display:flex!important;flex-direction:column!important;align-items:stretch!important;gap:12px!important;flex:1 1 auto!important;min-height:0!important;height:auto!important;max-height:none!important;overflow-y:auto!important;overflow-x:hidden!important}
+.order-stage-body>.order-card{position:relative!important;display:flex!important;flex:0 0 auto!important;width:100%!important;height:auto!important;min-height:0!important;transform:none!important}
+@media(max-width:600px){.order-stage-body{gap:10px!important;-webkit-overflow-scrolling:touch!important}.order-card-art-featured{height:155px!important;min-height:155px!important}}
