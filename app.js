@@ -39,7 +39,16 @@ function initSupabaseClient(){
       return false;
     }
     supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
-      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, storageKey: 'rafahstudio-auth' }
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        // O RafahStudio usa hash-routing próprio (#briefing / #pedido).
+        // Desativamos a captura automática do fragmento pelo Supabase para que
+        // uma rota pública nunca seja confundida com retorno de autenticação.
+        detectSessionInUrl: false,
+        storageKey: 'rafahstudio-auth',
+        storage: window.localStorage
+      }
     });
     return !!supabaseClient;
   }catch(err){
@@ -55,6 +64,11 @@ function randomToken(){return (crypto.randomUUID?.()||uid('tok'))+'-'+Math.rando
 function accountScopeId(){return currentUser?.id||currentUser?.user||currentUser?.email||currentUser?.username||'default';}
 function getOwnerToken(){const u=accountScopeId();let t=localStorage.getItem(ownerTokenKey(u));if(!t){t=randomToken();localStorage.setItem(ownerTokenKey(u),t);}return t;}
 function getPublicToken(){const u=accountScopeId();let t=localStorage.getItem(publicTokenKey(u));if(!t){t=randomToken();localStorage.setItem(publicTokenKey(u),t);}return t;}
+function isPublicHashRoute(){
+  const hash=String(location.hash||'');
+  return hash.startsWith('#briefing=') || hash.startsWith('#pedido=');
+}
+
 function briefingTokenFromHash(){
   try{
     if(!location.hash.startsWith('#briefing='))return '';
@@ -1001,12 +1015,24 @@ async function login(email,pass){
   if(!supabaseClient) initSupabaseClient();
   if(!supabaseClient){toast('Não foi possível conectar ao serviço de contas.','error');return;}
   if(!email||!pass){toast('Informe e-mail e senha.','error');return;}
+  const btn=$('#loginForm button[type=submit]');
+  if(btn){btn.disabled=true;btn.textContent='Entrando…';}
   try{
     const {data,error}=await supabaseClient.auth.signInWithPassword({email:email.trim().toLowerCase(),password:pass});
     if(error) throw error;
-    await establishAuthenticatedUser(data.user);
-      showApp();startLiveSync();toast('Bem-vindo de volta.');
-  }catch(err){console.error(err);toast(err?.message||'E-mail ou senha inválidos.','error');}
+    if(!data?.session?.user) throw new Error('A sessão não foi criada. Tente novamente.');
+    // O Supabase já grava a sessão no localStorage; salvamos também o usuário
+    // mínimo do workspace para que a interface consiga restaurar imediatamente.
+    await establishAuthenticatedUser(data.session.user);
+    showApp();
+    startLiveSync();
+    toast('Bem-vindo de volta.');
+  }catch(err){
+    console.error('[RafahStudio] Login:',err);
+    toast(err?.message||'E-mail ou senha inválidos.','error');
+  }finally{
+    if(btn){btn.disabled=false;btn.textContent='Entrar →';}
+  }
 }
 async function register(){
   const name=$('#regName').value.trim(),email=$('#regEmail').value.trim().toLowerCase(),user=$('#regUser').value.trim(),pass=$('#regPass').value,whats=$('#regWhats').value.trim(),area=$('#regArea').value;
@@ -1754,18 +1780,46 @@ async function init(){
   setupEvents();setupPublic();setupTracking();setupConversations();registerServiceWorker();document.body.classList.add('dark');
   if(!supabaseClient)initSupabaseClient();
   try{
-    const {data}=await supabaseClient.auth.getSession();
-    if(data?.session?.user){
-      await establishAuthenticatedUser(data.session.user);
+    let {data}=await supabaseClient.auth.getSession();
+    let session=data?.session||null;
+    if(!session){
+      try{
+        const refreshed=await supabaseClient.auth.refreshSession();
+        session=refreshed?.data?.session||null;
+      }catch(refreshErr){
+        console.warn('[RafahStudio] Renovação da sessão:',refreshErr);
+      }
+    }
+    if(session?.user){
+      await establishAuthenticatedUser(session.user);
       showApp();
       startLiveSync();
       return;
     }
   }catch(e){console.warn('[RafahStudio] Sessão:',e);}
+  // Só tentamos o cache do usuário quando o Supabase realmente não devolveu
+  // uma sessão. Nunca usamos esse cache para acessar dados protegidos sozinho.
   currentUser=read(KEYS.user,null);
   showAuth('login');
 }
 
+// Mantém o cache de usuário sincronizado quando o Supabase renova ou encerra a sessão.
+function bindAuthState(){
+  if(!supabaseClient?.auth?.onAuthStateChange)return;
+  supabaseClient.auth.onAuthStateChange((event,session)=>{
+    if(session?.user){
+      currentUser={id:session.user.id,email:session.user.email,name:session.user.user_metadata?.name||session.user.email,username:session.user.user_metadata?.username||session.user.email,area:session.user.user_metadata?.area||'Designer gráfico',whats:session.user.user_metadata?.whatsapp||''};
+      write(KEYS.user,currentUser);
+      return;
+    }
+    if(event==='SIGNED_OUT'){
+      currentUser=null;
+      localStorage.removeItem(KEYS.user);
+    }
+  });
+}
+
+bindAuthState();
 init();
 
 /* RAFAHSTUDIO DEADLINE TAGS */
