@@ -1,8 +1,9 @@
-const CACHE='rafahstudio-performance-6';
+const CACHE='rafahstudio-performance-7';
 const ASSETS=[
   './','./index.html','./style.css','./app.js','./manifest.json',
   './assets/logo.svg','./assets/logo2.svg',
-  './assets/icon-192.png','./assets/icon-512.png'
+  './assets/icon-192.png','./assets/icon-512.png',
+  './assets/icons/dashboard.svg','./assets/icons/orders.svg','./assets/icons/clients.svg','./assets/icons/chat.svg','./assets/icons/catalog.svg','./assets/icons/products.svg','./assets/icons/quotes.svg','./assets/icons/finance.svg','./assets/icons/profile.svg','./assets/icons/logout.svg'
 ];
 self.addEventListener('install',e=>{
   self.skipWaiting();
