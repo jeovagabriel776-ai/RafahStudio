@@ -871,7 +871,7 @@ function formatRelative(iso){const diff=Math.max(0,Date.now()-new Date(iso).getT
 function statusClass(s){return ({'Novo':'status-new','Em andamento':'status-doing','Esperando aprovação':'status-wait','Alteração':'status-change','Entregue':'status-done','Pago':'status-paid','Finalizado':'status-finalized'})[s]||'';}
 function priorityClass(p){return ({Alta:'priority-high',Urgente:'priority-urgent'})[p]||'';}
 function pageMeta(page){return {dashboard:['VISÃO GERAL','Dashboard'],pedidos:['PROJETOS','Pedidos'],clientes:['RELACIONAMENTO','Clientes'],catalogo:['PORTFÓLIO','Catálogo'],produtos:['CATÁLOGO','Produtos'],orcamentos:['COMERCIAL','Orçamentos'],financeiro:['FINANCEIRO','Financeiro'],perfil:['SUA CONTA','Meu perfil'],conversas:['RELACIONAMENTO','Conversas']}[page]||['','RafahStudio'];}
-function go(page){ currentPage=page; $$('.page').forEach(p=>p.classList.toggle('active',p.id===page)); $$('.nav-item[data-page]').forEach(n=>n.classList.toggle('active',n.dataset.page===page)); const [ey,t]=pageMeta(page); $('#pageEyebrow').textContent=ey; $('#pageTitle').textContent=t; $('#notificationPanel').classList.remove('open'); $('#sidebar').classList.remove('mobile-open'); render(); window.scrollTo({top:0,behavior:'smooth'}); }
+function go(page){ currentPage=page; document.documentElement.classList.toggle('show-dashboard-breadcrumb',page==='dashboard'); $$('.page').forEach(p=>p.classList.toggle('active',p.id===page)); $$('.nav-item[data-page]').forEach(n=>n.classList.toggle('active',n.dataset.page===page)); const [ey,t]=pageMeta(page); $('#pageEyebrow').textContent=ey; $('#pageTitle').textContent=t; $('#notificationPanel').classList.remove('open'); $('#sidebar').classList.remove('mobile-open'); render(); window.scrollTo({top:0,behavior:'smooth'}); }
 
 function render(){
   if(!currentUser) return;
@@ -1717,7 +1717,7 @@ function pdfWindow(title,body){
   *{box-sizing:border-box}html,body{margin:0;padding:0;background:#fff;color:#16231f}
   body{font-family:Arial,Helvetica,sans-serif;font-size:10.5pt;line-height:1.45}
   .pdf{width:100%}.pdf-header{display:grid;grid-template-columns:1fr auto;gap:18px;align-items:center;padding:0 0 14px;border-bottom:3px solid #12bfe8}
-  .pdf-logo{width:52px;height:auto;display:block}.pdf-kicker{font-size:8pt;letter-spacing:.18em;color:#178fa9;font-weight:800;text-transform:uppercase}
+  .pdf-logo{width:42px;height:auto;max-width:42px;display:block}.pdf-kicker{font-size:8pt;letter-spacing:.18em;color:#178fa9;font-weight:800;text-transform:uppercase}
   .pdf-title{font-size:22pt;line-height:1.05;margin:5px 0 3px;color:#10211d}.pdf-sub{font-size:8.5pt;color:#63756f}
   .pdf-code{text-align:right}.pdf-code b{font-size:9pt;letter-spacing:.12em;color:#178fa9}.pdf-code span{display:block;font-size:20pt;font-weight:800;color:#10211d;line-height:1;margin-top:4px}
   .pdf-status{margin:15px 0;padding:10px 12px;border:1px solid #cce5df;border-left:5px solid #12bfe8;border-radius:10px;background:#f3faf8}
