@@ -871,7 +871,7 @@ function formatRelative(iso){const diff=Math.max(0,Date.now()-new Date(iso).getT
 function statusClass(s){return ({'Novo':'status-new','Em andamento':'status-doing','Esperando aprovação':'status-wait','Alteração':'status-change','Entregue':'status-done','Pago':'status-paid','Finalizado':'status-finalized'})[s]||'';}
 function priorityClass(p){return ({Alta:'priority-high',Urgente:'priority-urgent'})[p]||'';}
 function pageMeta(page){return {dashboard:['VISÃO GERAL','Dashboard'],pedidos:['PROJETOS','Pedidos'],clientes:['RELACIONAMENTO','Clientes'],catalogo:['PORTFÓLIO','Catálogo'],produtos:['CATÁLOGO','Produtos'],orcamentos:['COMERCIAL','Orçamentos'],financeiro:['FINANCEIRO','Financeiro'],perfil:['SUA CONTA','Meu perfil'],conversas:['RELACIONAMENTO','Conversas']}[page]||['','RafahStudio'];}
-function go(page){ currentPage=page; $$('.page').forEach(p=>p.classList.toggle('active',p.id===page)); $$('.nav-item[data-page]').forEach(n=>n.classList.toggle('active',n.dataset.page===page)); const [ey,t]=pageMeta(page); $('#pageEyebrow').textContent=ey; $('#pageTitle').textContent=t; $('#notificationPanel').classList.remove('open'); $('#sidebar').classList.remove('mobile-open'); render(); window.scrollTo({top:0,behavior:'smooth'}); }
+function go(page){ currentPage=page; document.documentElement.classList.toggle('show-dashboard-breadcrumb',page==='dashboard'); $$('.page').forEach(p=>p.classList.toggle('active',p.id===page)); $$('.nav-item[data-page]').forEach(n=>n.classList.toggle('active',n.dataset.page===page)); const [ey,t]=pageMeta(page); $('#pageEyebrow').textContent=ey; $('#pageTitle').textContent=t; $('#notificationPanel').classList.remove('open'); $('#sidebar').classList.remove('mobile-open'); render(); window.scrollTo({top:0,behavior:'smooth'}); }
 
 function render(){
   if(!currentUser) return;
@@ -903,8 +903,8 @@ function renderSoon(){
 }
 
 function renderIdentity(){
- const name=designer.name||currentUser.name||'Designer'; $('#dashName').textContent=name.split(/\s+/)[0]; $('#sideName').textContent=name; const avatarTip=$('#sideAvatarTooltip'); if(avatarTip)avatarTip.textContent=name; $('#sideRole').textContent=designer.area||currentUser.area||'Designer gráfico'; $('#sideUsername').textContent='@'+(currentUser.username||currentUser.user||'usuario'); $('#profileUser').textContent=currentUser.username||currentUser.user||currentUser.email||'—'; $('#todayLabel').textContent=new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'});
- ['sideAvatar','topAvatar','profileAvatar'].forEach(id=>{const el=$('#'+id); if(!el)return; if(designer.photo){el.innerHTML=`<img src="${designer.photo}" alt="Foto de ${esc(name)}">`}else el.textContent=initials(name);});
+ const name=designer.name||currentUser.name||'Designer'; $('#dashName').textContent=name.split(/\s+/)[0]; $('#sideName').textContent=name; $('#sideRole').textContent=designer.area||currentUser.area||'Designer gráfico'; $('#sideUsername').textContent='@'+(currentUser.username||currentUser.user||'usuario'); $('#profileUser').textContent=currentUser.username||currentUser.user||currentUser.email||'—'; $('#todayLabel').textContent=new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'});
+ ['sideAvatar','topAvatar','profileAvatar'].forEach(id=>{const el=$('#'+id); if(!el)return; if(id==='sideAvatar')el.dataset.profileName=name; if(designer.photo){el.innerHTML=`<img src="${designer.photo}" alt="Foto de ${esc(name)}">`}else el.textContent=initials(name);});
 }
 function renderDashboard(){
  const active=orders.filter(o=>!['Entregue','Pago','Finalizado'].includes(o.status)).length;
@@ -1265,6 +1265,7 @@ function openOrderView(id){
   const o=orders.find(x=>x.id===id); if(!o)return;
   const b=o.briefing||{};
   const hasCatalogReady=o.paid||o.status==='Pago'||o.status==='Finalizado';
+  const trackingAvailable=o.status!=='Finalizado';
   modal(`<div class="modal-head">
     <div><span class="eyebrow">DETALHES DO PEDIDO</span><h2>${esc(o.project)}</h2><p class="muted">${esc(o.client)} • ${esc(o.type)}</p></div>
     <button class="close-modal" data-close-modal>×</button>
@@ -1272,7 +1273,7 @@ function openOrderView(id){
   <div class="detail-top">
     <span class="status-pill ${statusClass(o.status)}">${esc(o.status)}</span>
     <div class="detail-actions">
-      <button class="btn secondary" data-share-tracking="${o.id}">↗ Acompanhar pedido</button>
+      ${trackingAvailable?`<button class="btn secondary" data-share-tracking="${o.id}">↗ Acompanhar pedido</button>`:''}
       <button class="btn secondary" data-edit-order="${o.id}">Editar pedido</button>
       <button class="btn secondary" data-order-pdf="${o.id}">PDF</button>
       ${hasCatalogReady?`<button class="btn secondary" data-add-catalog-order="${o.id}">＋ Adicionar ao catálogo</button>`:''}
@@ -1553,10 +1554,9 @@ async function loadPublicTracking(opts={}){
     if(error)throw error;
     const o=Array.isArray(data)?data[0]:data;
     if(!o)throw new Error('Este link de acompanhamento não existe ou foi desativado.');
+    if(String(o.status||'')==='Finalizado')throw new Error('Este acompanhamento foi encerrado porque o pedido foi finalizado.');
     const profile=o.public_token?await (async()=>{try{const {data}=await supabaseClient.rpc('get_public_profile_for_token',{p_public_token:o.public_token});return Array.isArray(data)?(data[0]||{}):(data||{});}catch{return {}}})():{};
-    const status=o.status||'Novo';
-    if(status==='Finalizado') throw new Error('Este acompanhamento foi encerrado.');
-    const info=TRACKING_STATUS_INFO[status]||TRACKING_STATUS_INFO.Novo, progress=trackingProgress(status);
+    const status=o.status||'Novo', info=TRACKING_STATUS_INFO[status]||TRACKING_STATUS_INFO.Novo, progress=trackingProgress(status);
     $('#trackingBrandName').textContent=profile.name||'RafahStudio'; const trackAvatar=$('#trackingDesignerAvatar'); if(trackAvatar) trackAvatar.innerHTML=profile.photo?`<img src="${esc(profile.photo)}" alt="">`:esc(initials(profile.name||'RafahStudio'));
     $('#trackingProject').textContent=o.project_name||'Seu pedido';
     $('#trackingClient').textContent=o.client_name||'Cliente';
@@ -1717,7 +1717,7 @@ function pdfWindow(title,body){
   *{box-sizing:border-box}html,body{margin:0;padding:0;background:#fff;color:#16231f}
   body{font-family:Arial,Helvetica,sans-serif;font-size:10.5pt;line-height:1.45}
   .pdf{width:100%}.pdf-header{display:grid;grid-template-columns:1fr auto;gap:18px;align-items:center;padding:0 0 14px;border-bottom:3px solid #12bfe8}
-  .pdf-logo{width:52px;height:auto;display:block}.pdf-kicker{font-size:8pt;letter-spacing:.18em;color:#178fa9;font-weight:800;text-transform:uppercase}
+  .pdf-logo{width:42px;height:auto;max-width:42px;display:block}.pdf-kicker{font-size:8pt;letter-spacing:.18em;color:#178fa9;font-weight:800;text-transform:uppercase}
   .pdf-title{font-size:22pt;line-height:1.05;margin:5px 0 3px;color:#10211d}.pdf-sub{font-size:8.5pt;color:#63756f}
   .pdf-code{text-align:right}.pdf-code b{font-size:9pt;letter-spacing:.12em;color:#178fa9}.pdf-code span{display:block;font-size:20pt;font-weight:800;color:#10211d;line-height:1;margin-top:4px}
   .pdf-status{margin:15px 0;padding:10px 12px;border:1px solid #cce5df;border-left:5px solid #12bfe8;border-radius:10px;background:#f3faf8}

@@ -541,6 +541,7 @@ language sql security definer set search_path=public as $$
   select e.id,e.tracking_token,e.order_id,e.author,e.kind,e.message,e.image_url,e.meta,e.created_at
   from public.order_tracking_events e
   where e.tracking_token=p_tracking_token
+    and exists (select 1 from public.order_tracking t where t.tracking_token=e.tracking_token and t.status<>'Finalizado')
   order by e.created_at desc
   limit 100;
 $$;
@@ -675,7 +676,7 @@ language sql security definer set search_path=public as $$
          t.deadline,t.status,t.created_at,t.updated_at
   from public.order_tracking t
   where t.tracking_token=p_tracking_token
-    and coalesce(t.status,'Novo') <> 'Finalizado'
+    and t.status<>'Finalizado'
   limit 1;
 $$;
 grant execute on function public.get_order_tracking(text) to anon,authenticated;
