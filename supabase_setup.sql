@@ -675,6 +675,7 @@ language sql security definer set search_path=public as $$
          t.deadline,t.status,t.created_at,t.updated_at
   from public.order_tracking t
   where t.tracking_token=p_tracking_token
+    and coalesce(t.status,'Novo') <> 'Finalizado'
   limit 1;
 $$;
 grant execute on function public.get_order_tracking(text) to anon,authenticated;

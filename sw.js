@@ -1,4 +1,4 @@
-const CACHE='rafahstudio-performance-7';
+const CACHE='rafahstudio-performance-8';
 const ASSETS=[
   './','./index.html','./style.css','./app.js','./manifest.json',
   './assets/logo.svg','./assets/logo2.svg',
