@@ -1713,24 +1713,51 @@ function pdfWindow(title,body){
   if(!w){toast('Permita pop-ups para gerar o PDF.','error');return;}
   w.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${esc(title)}</title>
   <style>
-  @page{size:A4;margin:12mm}
-  *{box-sizing:border-box}html,body{margin:0;padding:0;background:#fff;color:#16231f}
-  body{font-family:Arial,Helvetica,sans-serif;font-size:10.5pt;line-height:1.45}
-  .pdf{width:100%}.pdf-header{display:grid;grid-template-columns:1fr auto;gap:18px;align-items:center;padding:0 0 14px;border-bottom:3px solid #12bfe8}
-  .pdf-logo{width:42px;height:auto;max-width:42px;display:block}.pdf-kicker{font-size:8pt;letter-spacing:.18em;color:#178fa9;font-weight:800;text-transform:uppercase}
-  .pdf-title{font-size:22pt;line-height:1.05;margin:5px 0 3px;color:#10211d}.pdf-sub{font-size:8.5pt;color:#63756f}
-  .pdf-code{text-align:right}.pdf-code b{font-size:9pt;letter-spacing:.12em;color:#178fa9}.pdf-code span{display:block;font-size:20pt;font-weight:800;color:#10211d;line-height:1;margin-top:4px}
-  .pdf-status{margin:15px 0;padding:10px 12px;border:1px solid #cce5df;border-left:5px solid #12bfe8;border-radius:10px;background:#f3faf8}
-  .pdf-status b{font-size:9pt;color:#0d8eaa}.pdf-status span{float:right;font-weight:700;color:#233d36}
-  .pdf-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin:10px 0 16px}.pdf-field{padding:10px 11px;border:1px solid #dce8e4;border-radius:9px;background:#fff}
-  .pdf-field label{display:block;font-size:7.5pt;letter-spacing:.08em;text-transform:uppercase;color:#70837d;font-weight:700}.pdf-field strong{display:block;margin-top:3px;font-size:10pt;color:#18312a}
-  .pdf-section{margin:15px 0}.pdf-section h2{font-size:11pt;margin:0 0 7px;color:#0d7f98;display:flex;align-items:center;gap:7px}.pdf-section h2:before{content:"";width:18px;height:3px;background:#12bfe8;border-radius:9px}
-  .pdf-box{border:1px solid #dce8e4;border-radius:10px;padding:11px;background:#f8fbfa;white-space:pre-wrap;min-height:45px}
-  .pdf-table{width:100%;border-collapse:collapse;border:1px solid #dce8e4;border-radius:10px;overflow:hidden}.pdf-table th{text-align:left;font-size:7.5pt;text-transform:uppercase;letter-spacing:.06em;color:#64766f;background:#eef6f3;padding:8px}.pdf-table td{padding:8px;border-top:1px solid #e2ebe8}.pdf-total{font-size:17pt;font-weight:800;color:#0a7f98;text-align:right;margin-top:12px}
-  .pdf-footer{margin-top:25px;padding-top:10px;border-top:1px solid #dce8e4;display:flex;justify-content:space-between;gap:10px;color:#73837e;font-size:7.5pt}
-  .pdf-note{font-size:8pt;color:#60736c}
-  @media print{body{print-color-adjust:exact;-webkit-print-color-adjust:exact}.pdf-box,.pdf-status,.pdf-table th{print-color-adjust:exact;-webkit-print-color-adjust:exact}}
-  </style></head><body><div class="pdf">${body}<div class="pdf-footer"><span>RafahStudio • documento profissional</span><span>Gerado em ${new Date().toLocaleString('pt-BR')}</span></div></div>
+  @page{size:A4;margin:10mm}
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:#fff;color:#4b4b4b}
+  body{font-family:Arial,Helvetica,sans-serif;font-size:10.5pt;line-height:1.35}
+  .pdf-sheet{min-height:277mm;border:1.2px solid #4f4f4f;padding:13mm 15mm 14mm;background:#fff;position:relative}
+  .pdf-header{display:grid;grid-template-columns:1fr auto;gap:20px;align-items:start;padding-bottom:10mm;border-bottom:2.5px solid #505050}
+  .pdf-brand{display:flex;align-items:flex-start}
+  .pdf-logo{width:188px;max-width:188px;display:block;line-height:0}
+  .pdf-logo svg{display:block;width:100%;height:auto;max-height:66px}
+  .pdf-code{text-align:right;min-width:170px;padding-top:3px}
+  .pdf-code .label{display:block;font-size:8.5pt;font-weight:800;color:#525252;letter-spacing:.03em}
+  .pdf-code .value{display:block;font-size:18pt;font-weight:800;color:#3f3f3f;line-height:1.05;margin-top:2px}
+  .pdf-code .date{display:block;margin-top:3px;font-size:9pt;font-weight:700;color:#555}
+  .pdf-meta{display:grid;grid-template-columns:1fr 1fr;gap:3px 44px;padding:12mm 8mm 7mm}
+  .pdf-meta-row{display:flex;gap:6px;align-items:baseline;min-width:0;font-size:9.6pt}
+  .pdf-meta-row b{font-weight:800;color:#575757;white-space:nowrap}
+  .pdf-meta-row span{font-weight:600;color:#4c4c4c;overflow-wrap:anywhere}
+  .pdf-section-title{text-align:center;margin:9mm 0 7mm;font-size:20pt;line-height:1;font-weight:800;color:#515151;letter-spacing:.01em}
+  .pdf-table{width:100%;border-collapse:collapse;border:1px solid #5d5d5d}
+  .pdf-table th{background:#565656;color:#fff;text-align:center;font-size:10.5pt;font-weight:800;padding:7px 8px;border-right:1px solid #e0e0e0}
+  .pdf-table th:first-child{text-align:left}
+  .pdf-table th:last-child{border-right:0}
+  .pdf-table td{padding:7px 9px;border-top:1px solid #686868;color:#4e4e4e;font-size:10.3pt;font-weight:600}
+  .pdf-table td:nth-child(2),.pdf-table td:nth-child(3),.pdf-table td:nth-child(4){text-align:center}
+  .pdf-table .money{text-align:right}
+  .pdf-summary{margin-top:7mm;display:flex;justify-content:flex-end}
+  .pdf-summary-box{width:255px}
+  .pdf-summary-row{display:grid;grid-template-columns:1fr 104px;align-items:stretch;margin-bottom:3px}
+  .pdf-summary-row b{padding:7px 10px;text-align:right;font-size:10.5pt;color:#555}
+  .pdf-summary-row strong{padding:7px 9px;background:#555;color:#fff;text-align:right;font-size:11pt}
+  .pdf-summary-row.total b,.pdf-summary-row.total strong{font-size:11.5pt}
+  .pdf-payment{margin:30mm auto 0;display:grid;grid-template-columns:205px 200px;justify-content:center;align-items:stretch}
+  .pdf-payment-label{display:flex;flex-direction:column;justify-content:center;gap:2px;text-align:right;padding-right:10px}
+  .pdf-payment-label b{font-size:22pt;line-height:1;font-weight:800;color:#535353}
+  .pdf-payment-values{background:#555;color:#fff;display:flex;flex-direction:column;justify-content:center;min-height:78px}
+  .pdf-payment-values strong{font-size:16pt;line-height:1.1;padding:5px 14px;text-align:right}
+  .pdf-payment-values strong+strong{margin-top:3px}
+  .pdf-details{margin-top:10mm;display:grid;grid-template-columns:1fr 1fr;gap:8mm}
+  .pdf-detail-box{border-top:2px solid #57dff6;padding-top:5px}
+  .pdf-detail-box h3{margin:0 0 4px;font-size:9pt;letter-spacing:.08em;text-transform:uppercase;color:#138ba3}
+  .pdf-detail-box p{margin:0;white-space:pre-wrap;font-size:8.4pt;color:#666;line-height:1.4}
+  .pdf-note{margin-top:9mm;font-size:7.8pt;color:#777;line-height:1.35;text-align:center}
+  @media print{body{print-color-adjust:exact;-webkit-print-color-adjust:exact}.pdf-sheet,.pdf-table th,.pdf-summary-row strong,.pdf-payment-values{print-color-adjust:exact;-webkit-print-color-adjust:exact}}
+  @media(max-width:700px){.pdf-sheet{padding:10mm}.pdf-logo{width:150px}.pdf-meta{gap:3px 18px}.pdf-payment{grid-template-columns:160px 170px}.pdf-payment-label b{font-size:17pt}}
+  </style></head><body><div class="pdf-sheet">${body}</div>
   <script>window.addEventListener('load',()=>setTimeout(()=>window.print(),350));<\/script></body></html>`);
   w.document.close();
 }
@@ -1738,26 +1765,59 @@ function pdfWindow(title,body){
 function generateOrderPDF(id){
   const o=orders.find(x=>String(x.id)===String(id));if(!o)return;
   const b=o.briefing||{};
-  const people=(b.people||[]).map(p=>`<tr><td>${esc(p.name)}</td><td>${esc(p.info||'—')}</td></tr>`).join('');
-  const body=`<header class="pdf-header"><div><div class="pdf-logo">${RAFahPdfLogoSvg}</div><div class="pdf-kicker">RafahStudio • documento de projeto</div><div class="pdf-title">${esc(o.project)}</div><div class="pdf-sub">${esc(designer.name||'Designer')}${designer.brand&&designer.brand!=='RafahStudio'?' • '+esc(designer.brand):''}</div></div><div class="pdf-code"><b>PEDIDO</b><span>${esc(documentNumber(o))}</span></div></header>
-  <div class="pdf-status"><b>${esc(o.status)}</b><span>${o.paid||o.status==='Pago'?'PAGAMENTO RECEBIDO':'PAGAMENTO PENDENTE'}</span></div>
-  <div class="pdf-grid"><div class="pdf-field"><label>Cliente</label><strong>${esc(o.client)}</strong></div><div class="pdf-field"><label>Serviço</label><strong>${esc(o.type)}</strong></div><div class="pdf-field"><label>Prazo</label><strong>${dateLabel(o.deadline)}</strong></div><div class="pdf-field"><label>Valor</label><strong>${money(o.value)}</strong></div></div>
-  <section class="pdf-section"><h2>Informações da arte</h2><div class="pdf-box">${esc(b.texts||b.artInfo||'Sem informações adicionais.')}</div></section>
-  ${o.whats||b.whats?`<section class="pdf-section"><h2>Seus dados</h2><div class="pdf-grid"><div class="pdf-field"><label>Nome</label><strong>${esc(o.client)}</strong></div><div class="pdf-field"><label>Telefone/WhatsApp</label><strong>${esc(o.whats||b.whats)}</strong></div></div></section>`:''}
-  ${b.refs?`<section class="pdf-section"><h2>Fotos e referências</h2><div class="pdf-box">${esc(b.refs)}</div></section>`:''}
-  ${b.notes?`<section class="pdf-section"><h2>Observações</h2><div class="pdf-box">${esc(b.notes)}</div></section>`:''}
-  ${b.people?.length?`<section class="pdf-section"><h2>Pessoas da arte</h2><table class="pdf-table"><thead><tr><th>Nome</th><th>Informação</th></tr></thead><tbody>${people}</tbody></table></section>`:''}`;
-  pdfWindow(`Pedido — ${o.project}`,body);
+  const createdDate=o.created?dateLabel(o.created):dateLabel(todayISO());
+  const createdTime=new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  const rows=(Array.isArray(o.products)&&o.products.length?o.products:[{name:o.type||'Serviço de design',qty:1,price:Number(o.value)||0}])
+    .map(i=>`<tr><td>${esc(i.name||i.desc||o.type||'Serviço')}</td><td>${Number(i.qty)||1}</td><td class="money">${money(Number(i.price)||0)}</td><td class="money">${money((Number(i.qty)||0)*(Number(i.price)||0))}</td></tr>`).join('');
+  const total=Number(o.value)||0;
+  const received=(o.paid||o.status==='Pago'||o.status==='Finalizado')?total:0;
+  const balance=Math.max(0,total-received);
+  const paymentStatus=received>0&&balance===0?'Pagamento integral registrado':'Pagamento pendente';
+  const people=(b.people||[]).map(p=>`${p.name}${p.info?` - ${p.info}`:''}`).join('\n');
+  const detailsLeft=[
+    b.texts||b.artInfo?`Informações da arte:\n${b.texts||b.artInfo}`:'',
+    people?`Pessoas da arte:\n${people}`:''
+  ].filter(Boolean).join('\n\n');
+  const detailsRight=[
+    b.refs?`Fotos e referências:\n${b.refs}`:'',
+    b.notes?`Observações:\n${b.notes}`:''
+  ].filter(Boolean).join('\n\n');
+  const body=`
+  <header class="pdf-header">
+    <div class="pdf-brand"><div class="pdf-logo">${RAFahPdfLogoSvg}</div></div>
+    <div class="pdf-code"><span class="label">NOTA DE PEDIDO Nº ${esc(documentNumber(o))}</span><span class="value">${esc(documentNumber(o))}</span><span class="date">DATA: ${esc(createdDate)} ÀS ${esc(createdTime)}</span></div>
+  </header>
+  <div class="pdf-meta">
+    <div class="pdf-meta-row"><b>DESIGNER:</b><span>${esc(designer.name||'Designer')}</span></div>
+    <div class="pdf-meta-row"><b>CLIENTE:</b><span>${esc(o.client||'-')}</span></div>
+    <div class="pdf-meta-row"><b>CONTATO:</b><span>${esc(designer.whats||'-')}</span></div>
+    <div class="pdf-meta-row"><b>CONTATO CLIENTE:</b><span>${esc(o.whats||b.whats||'-')}</span></div>
+    <div class="pdf-meta-row"><b>INSTAGRAM:</b><span>${esc(designer.insta||'-')}</span></div>
+    <div class="pdf-meta-row"><b>PRAZO:</b><span>${esc(dateLabel(o.deadline)||'A definir')}</span></div>
+    <div class="pdf-meta-row"><b>TIPO DE VENDA:</b><span>${esc(o.type||'Serviço de design')}</span></div>
+    <div class="pdf-meta-row"><b>SITUAÇÃO:</b><span>${esc(paymentStatus)}</span></div>
+  </div>
+  <h1 class="pdf-section-title">ITENS DO PEDIDO</h1>
+  <table class="pdf-table"><thead><tr><th>PRODUTO / SERVIÇO</th><th>QTD.</th><th>VALOR UNITÁRIO</th><th>SUBTOTAL</th></tr></thead><tbody>${rows}</tbody></table>
+  <div class="pdf-summary"><div class="pdf-summary-box">
+    <div class="pdf-summary-row total"><b>VALOR TOTAL:</b><strong>${money(total)}</strong></div>
+  </div></div>
+  <div class="pdf-payment"><div class="pdf-payment-label"><b>VALOR RECEBIDO:</b><b>SALDO A PAGAR:</b></div><div class="pdf-payment-values"><strong>${money(received)}</strong><strong>${money(balance)}</strong></div></div>
+  ${detailsLeft||detailsRight?`<div class="pdf-details">${detailsLeft?`<div class="pdf-detail-box"><h3>INFORMAÇÕES DO PROJETO</h3><p>${esc(detailsLeft)}</p></div>`:''}${detailsRight?`<div class="pdf-detail-box"><h3>REFERÊNCIAS E OBSERVAÇÕES</h3><p>${esc(detailsRight)}</p></div>`:''}</div>`:''}
+  <div class="pdf-note">Documento de pedido emitido pelo RafahStudio. Situação financeira conforme os registros disponíveis no sistema.</div>`;
+  pdfWindow(`Nota de Pedido ${documentNumber(o)} - ${o.project}`,body);
 }
+
 function generateQuotePDF(id){
   const q=quotes.find(x=>String(x.id)===String(id));if(!q)return;
-  const rows=(q.items||[]).map(i=>`<tr><td>${esc(i.desc||'Serviço')}</td><td>${i.qty}</td><td>${money(i.price)}</td><td>${money((Number(i.qty)||0)*(Number(i.price)||0))}</td></tr>`).join('');
-  const body=`<header class="pdf-header"><div><div class="pdf-logo">${RAFahPdfLogoSvg}</div><div class="pdf-kicker">RafahStudio • proposta comercial</div><div class="pdf-title">${esc(q.project)}</div><div class="pdf-sub">${esc(designer.name||'Designer')}${designer.brand&&designer.brand!=='RafahStudio'?' • '+esc(designer.brand):''}</div></div><div class="pdf-code"><b>ORÇAMENTO</b><span>${esc(documentNumber(q))}</span></div></header>
-  <div class="pdf-status"><b>${esc(q.status)}</b><span>VALIDADE • ${dateLabel(q.valid)}</span></div>
-  <div class="pdf-grid"><div class="pdf-field"><label>Cliente</label><strong>${esc(q.client)}</strong></div><div class="pdf-field"><label>Projeto</label><strong>${esc(q.project)}</strong></div></div>
-  <section class="pdf-section"><h2>Itens da proposta</h2><table class="pdf-table"><thead><tr><th>Descrição</th><th>Qtd.</th><th>Unitário</th><th>Total</th></tr></thead><tbody>${rows}</tbody></table><div class="pdf-total">Total: ${money(q.total)}</div></section>
-  ${q.terms?`<section class="pdf-section"><h2>Condições</h2><div class="pdf-box">${esc(q.terms)}</div></section>`:''}`;
-  pdfWindow(`Orçamento — ${q.project}`,body);
+  const rows=(q.items||[]).map(i=>`<tr><td>${esc(i.desc||'Serviço')}</td><td>${i.qty}</td><td class="money">${money(i.price)}</td><td class="money">${money((Number(i.qty)||0)*(Number(i.price)||0))}</td></tr>`).join('');
+  const body=`<header class="pdf-header"><div><div class="pdf-logo">${RAFahPdfLogoSvg}</div></div><div class="pdf-code"><span class="label">ORÇAMENTO Nº ${esc(documentNumber(q))}</span><span class="value">${esc(documentNumber(q))}</span><span class="date">DATA: ${esc(dateLabel(q.created||todayISO()))}</span></div></header>
+  <div class="pdf-meta"><div class="pdf-meta-row"><b>CLIENTE:</b><span>${esc(q.client)}</span></div><div class="pdf-meta-row"><b>PROJETO:</b><span>${esc(q.project)}</span></div><div class="pdf-meta-row"><b>STATUS:</b><span>${esc(q.status)}</span></div><div class="pdf-meta-row"><b>VALIDADE:</b><span>${esc(dateLabel(q.valid))}</span></div></div>
+  <h1 class="pdf-section-title">ITENS DA PROPOSTA</h1><table class="pdf-table"><thead><tr><th>PRODUTO / SERVIÇO</th><th>QTD.</th><th>VALOR UNITÁRIO</th><th>SUBTOTAL</th></tr></thead><tbody>${rows}</tbody></table>
+  <div class="pdf-summary"><div class="pdf-summary-box"><div class="pdf-summary-row total"><b>VALOR TOTAL:</b><strong>${money(q.total)}</strong></div></div></div>
+  ${q.terms?`<div class="pdf-details"><div class="pdf-detail-box"><h3>CONDIÇÕES COMERCIAIS</h3><p>${esc(q.terms)}</p></div></div>`:''}
+  <div class="pdf-note">Documento de orçamento emitido pelo RafahStudio.</div>`;
+  pdfWindow(`Orçamento ${documentNumber(q)} - ${q.project}`,body);
 }
 
 function showUploadProgress(title='Enviando arquivo…', text='Aguarde enquanto atualizamos sua imagem.'){

@@ -1147,3 +1147,49 @@ body,html{background:#0b1110;color:#f2f2f2}
   border:1px solid rgba(255,255,255,.10);display:grid;place-items:center;overflow:hidden;
 }
 .auth-brand.logo-only .site-logo{width:25px;height:25px;border-radius:0;object-fit:contain}
+
+
+/* RAFAHSTUDIO 2026 — logos públicas sem recorte */
+.auth-brand.logo-only .logo-slot,
+.public-top .auth-brand.logo-only .logo-slot,
+.tracking-top .auth-brand.logo-only .logo-slot{
+  width:142px!important;
+  height:50px!important;
+  flex:0 0 142px!important;
+  border:0!important;
+  border-radius:0!important;
+  background:transparent!important;
+  overflow:visible!important;
+  box-shadow:none!important;
+  display:flex!important;
+  align-items:center!important;
+  justify-content:flex-start!important;
+  padding:0!important;
+}
+.auth-brand.logo-only .site-logo,
+.public-top .auth-brand.logo-only .site-logo,
+.tracking-top .auth-brand.logo-only .site-logo{
+  width:142px!important;
+  height:auto!important;
+  max-width:142px!important;
+  max-height:50px!important;
+  border-radius:0!important;
+  object-fit:contain!important;
+  filter:none!important;
+  display:block!important;
+}
+.auth-brand.logo-only{filter:none!important}
+.public-top .auth-brand.logo-only,
+.tracking-top .auth-brand.logo-only{justify-content:flex-start!important}
+@media(max-width:600px){
+  .auth-brand.logo-only .logo-slot,
+  .public-top .auth-brand.logo-only .logo-slot,
+  .tracking-top .auth-brand.logo-only .logo-slot{
+    width:118px!important;height:42px!important;flex-basis:118px!important;
+  }
+  .auth-brand.logo-only .site-logo,
+  .public-top .auth-brand.logo-only .site-logo,
+  .tracking-top .auth-brand.logo-only .site-logo{
+    width:118px!important;max-width:118px!important;max-height:42px!important;
+  }
+}
