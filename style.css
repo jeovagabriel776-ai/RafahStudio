@@ -1605,3 +1605,9 @@ html{scroll-behavior:smooth}
   .top-welcome-avatar.top-welcome-static .avatar{box-shadow:0 8px 22px rgba(0,0,0,.18)!important}
   .sidebar{display:block}
 }
+
+
+/* Perfil no dashboard: manter acesso somente pelo canto superior direito. */
+.side-profile{display:none!important;}
+.top-welcome-avatar{display:none!important;}
+.topbar-welcome{gap:0!important;}
