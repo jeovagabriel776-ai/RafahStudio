@@ -93,7 +93,12 @@
       <div class="side-brand logo-only" aria-label="RafahStudio">
         <span class="logo-slot"><img class="site-logo" src="assets/logo2.svg" alt="RafahStudio"></span>
       </div>
-      <div class="side-profile"><div id="sideAvatar" class="avatar avatar-lg" data-profile-name="Designer">JG</div><div><b id="sideName">Designer</b><small id="sideRole">Designer gráfico</small><small id="sideUsername" class="side-username">@usuario</small></div><button id="profileQuick" class="icon-btn" title="Meu perfil">•••</button></div>
+      <div class="side-profile" title="Perfil">
+        <div class="profile-avatar-button profile-avatar-static" aria-hidden="true">
+          <span id="sideAvatar" class="avatar avatar-lg" data-profile-name="Designer">JG</span>
+        </div>
+        <div class="side-profile-copy"><b id="sideName">Designer</b><small id="sideRole">Designer gráfico</small><small id="sideUsername" class="side-username">@usuario</small></div>
+      </div>
       <nav class="nav-list icon-only-nav" aria-label="Navegação principal">
         <button class="nav-item active" data-page="dashboard" title="Dashboard" aria-label="Dashboard"><span class="nav-icon"><img src="assets/icons/dashboard.svg" alt=""></span><span>Dashboard</span></button>
         <button class="nav-item" data-page="pedidos" title="Pedidos" aria-label="Pedidos"><span class="nav-icon"><img src="assets/icons/orders.svg" alt=""></span><span>Pedidos</span><em id="navOrders">0</em></button>
@@ -104,22 +109,44 @@
         <button class="nav-item" data-page="orcamentos" title="Orçamentos" aria-label="Orçamentos"><span class="nav-icon"><img src="assets/icons/quotes.svg" alt=""></span><span>Orçamentos</span></button>
         <button class="nav-item" data-page="financeiro" title="Financeiro" aria-label="Financeiro"><span class="nav-icon"><img src="assets/icons/finance.svg" alt=""></span><span>Financeiro</span></button>
       </nav>
-      <div class="side-bottom"><button class="nav-item" data-page="perfil" title="Meu perfil" aria-label="Meu perfil"><span class="nav-icon"><img src="assets/icons/profile.svg" alt=""></span><span>Meu perfil</span></button><button class="nav-item danger" id="logoutBtn" title="Sair" aria-label="Sair"><span class="nav-icon"><img src="assets/icons/logout.svg" alt=""></span><span>Sair</span></button></div>
+      <div class="side-bottom"><button class="nav-item danger" id="logoutBtn" title="Sair" aria-label="Sair"><span class="nav-icon"><img src="assets/icons/logout.svg" alt=""></span><span>Sair</span></button></div>
     </aside>
 
     <main class="main">
       <header class="topbar">
         <button class="mobile-menu icon-btn" id="mobileMenu">☰</button>
+        <div class="topbar-welcome">
+          <div class="top-welcome-avatar top-welcome-static" id="topWelcomeProfile" aria-hidden="true">
+            <span id="topAvatar" class="avatar avatar-md">JG</span>
+          </div>
+          <div class="top-welcome-copy">
+            <span>Olá, <b id="topGreetingName">Designer</b> <span class="top-wave">✦</span></span>
+            <small>Bem-vindo de volta ao seu estúdio.</small>
+          </div>
+        </div>
         <div class="breadcrumb"><span id="pageEyebrow">VISÃO GERAL</span><b id="pageTitle">Dashboard</b></div>
         <div class="top-actions">
-          <label class="global-search"><span>⌕</span><input id="globalSearch" placeholder="Buscar em pedidos, clientes, produtos e orçamentos..."></label>
-          <button class="icon-btn notification-trigger" id="notificationBtn" title="Notificações"><span>♧</span><em id="notifyCount">0</em></button>
-
+          <label class="global-search"><span>⌕</span><input id="globalSearch" placeholder="Buscar pedidos, clientes, produtos..."></label>
+          <button class="icon-btn notification-trigger" id="notificationBtn" title="Notificações" aria-label="Notificações"><span class="notification-glyph"><img src="assets/icons/notification.svg" alt=""></span><em id="notifyCount">0</em></button>
+          <button class="top-account" id="topAccountBtn" type="button" title="Meu perfil" aria-label="Meu perfil">
+            <span id="topAccountAvatar" class="avatar avatar-md">JG</span>
+            <span class="top-account-copy"><b id="topAccountName">Designer</b><small id="topAccountRole">Designer gráfico</small></span>
+            <span class="top-account-chevron">⌄</span>
+          </button>
         </div>
       </header>
 
+      <nav class="mobile-bottom-nav" id="mobileBottomNav" aria-label="Navegação móvel">
+        <button class="mobile-nav-item active" data-page="dashboard" title="Dashboard" aria-label="Dashboard"><span><img src="assets/icons/dashboard.svg" alt=""></span></button>
+        <button class="mobile-nav-item" data-page="pedidos" title="Pedidos" aria-label="Pedidos"><span><img src="assets/icons/orders.svg" alt=""></span><em id="mobileNavOrders">0</em></button>
+        <button class="mobile-nav-item" data-page="conversas" title="Conversas" aria-label="Conversas"><span><img src="assets/icons/chat.svg" alt=""></span><em id="mobileNavConversations">0</em></button>
+        <button class="mobile-nav-item" data-page="clientes" title="Clientes" aria-label="Clientes"><span><img src="assets/icons/clients.svg" alt=""></span></button>
+        <button class="mobile-nav-item" data-page="produtos" title="Produtos" aria-label="Produtos"><span><img src="assets/icons/products.svg" alt=""></span></button>
+        <button class="mobile-nav-item more" id="mobileMoreBtn" type="button" title="Mais" aria-label="Mais"><span>•••</span></button>
+      </nav>
+
       <section id="dashboard" class="page active">
-        <div class="page-head dashboard-head"><div><span class="eyebrow">VISÃO GERAL</span><h1>Olá, <span id="dashName">Designer</span>! <span class="wave">👋</span></h1><p>Acompanhe seus pedidos, prazos e recebimentos em um só lugar.</p></div><div class="head-date" id="todayLabel"></div></div>
+        <div class="page-head dashboard-head"><div><span class="eyebrow">VISÃO GERAL</span><h1>Dashboard</h1><p>Acompanhe pedidos, prazos e recebimentos em um só lugar.</p></div><div class="head-date" id="todayLabel"></div></div>
         <div class="metric-grid">
           <article class="metric-card accent"><div class="metric-icon">▤</div><small>Pedidos ativos</small><strong id="mActive">0</strong><span id="mActiveSub">0 em andamento</span></article>
           <article class="metric-card"><div class="metric-icon purple">✦</div><small>Novos briefings</small><strong id="mNew">0</strong><span>aguardando organização</span></article>
