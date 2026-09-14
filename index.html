@@ -88,6 +88,51 @@
     </div>
   </section>
 
+  <section id="storePage" class="store-public hidden" aria-label="Loja pública RafahStudio">
+    <div class="store-shell">
+      <header class="store-header">
+        <a class="store-brand" href="./" aria-label="RafahStudio"><img src="assets/logo.svg" alt="RafahStudio"></a>
+        <nav class="store-nav"><a href="#store-catalog" data-store-scroll>Artes</a><a href="#store-services" data-store-scroll>Serviços</a><a href="#store-order" data-store-scroll>Pedido personalizado</a></nav>
+        <div class="store-head-actions">
+          <label class="store-search"><span>⌕</span><input id="storeSearch" type="search" placeholder="Buscar artes, estampas e serviços..." autocomplete="off"></label>
+          <button class="store-icon-btn store-bell" id="storeNotifyBtn" type="button" aria-label="Notificações"><img src="assets/icons/notification2.svg" alt=""></button>
+          <button class="store-icon-btn" id="storeCartBtn" type="button" aria-label="Meu pedido"><span class="store-cart-icon">＋</span><em id="storeCartCount">0</em></button>
+        </div>
+      </header>
+      <main class="store-main">
+        <section class="store-hero" data-parallax="0.08">
+          <div class="store-grid-bg"></div><div class="store-orb orb-one" data-parallax="0.18"></div><div class="store-orb orb-two" data-parallax="-0.12"></div>
+          <div class="store-hero-content" data-reveal>
+            <span class="store-kicker">RAFAHSTUDIO • CRIAÇÃO DIGITAL</span>
+            <h1>Encontre sua próxima arte.<br><em>Ou crie algo único.</em></h1>
+            <p>Artes, estampas e serviços criativos com atendimento personalizado. Escolha o que deseja e envie sua solicitação em poucos passos.</p>
+            <div class="store-hero-actions"><button class="store-primary" id="storeHeroShopBtn" data-magnetic>Explorar produtos <span>→</span></button><button class="store-ghost" id="storeHeroOrderBtn" data-magnetic>Quero um projeto exclusivo</button></div>
+            <div class="store-trust"><span>✓ Atendimento personalizado</span><span>✓ Briefing simples</span><span>✓ Acompanhamento do pedido</span></div>
+          </div>
+        </section>
+        <section class="store-category-strip" id="store-services" data-reveal>
+          <button class="store-category active" data-store-category="all">Tudo</button><button class="store-category" data-store-category="Cartaz">Cartazes</button><button class="store-category" data-store-category="Logo">Logos</button><button class="store-category" data-store-category="Identidade visual">Identidade visual</button><button class="store-category" data-store-category="Post para Instagram">Posts</button><button class="store-category" data-store-category="Social Media">Social Media</button><button class="store-category" data-store-category="Impressão">Impressão</button>
+        </section>
+        <section class="store-feature-grid" data-reveal>
+          <article class="store-feature-card feature-main"><div><span>PROJETO SOB MEDIDA</span><h2>Tem uma ideia diferente?</h2><p>Explique o que você precisa e o estúdio prepara uma proposta para o seu projeto.</p><button class="store-inline" id="storeFeatureOrderBtn">Solicitar projeto →</button></div><b>✦</b></article>
+          <article class="store-feature-card"><div><span>ESCOLHA RÁPIDA</span><h2>Produtos com valor definido</h2><p>Veja referências, escolha os itens e monte sua solicitação.</p></div><b>＋</b></article>
+        </section>
+        <section id="store-catalog" class="store-catalog-section">
+          <div class="store-section-head" data-reveal><div><span class="store-kicker">CATÁLOGO</span><h2>Artes e serviços disponíveis</h2><p>Selecione um item para conhecer os detalhes e adicionar ao pedido.</p></div><span id="storeResultCount">0 itens</span></div>
+          <div id="storeSkeletons" class="store-product-grid"><span class="store-skeleton"></span><span class="store-skeleton"></span><span class="store-skeleton"></span><span class="store-skeleton"></span></div>
+          <div id="storeProductGrid" class="store-product-grid hidden"></div><div id="storeEmpty" class="store-empty hidden"><b>✦</b><h3>Nenhum item encontrado</h3><p>Tente outra categoria ou palavra-chave.</p></div>
+        </section>
+        <section id="store-order" class="store-order-banner" data-reveal><div><span class="store-kicker">ATENDIMENTO PERSONALIZADO</span><h2>Não encontrou o que precisava?</h2><p>Faça um pedido personalizado e envie seu briefing. O mesmo acompanhamento do RafahStudio continua disponível para você.</p></div><button class="store-primary" id="storeBannerOrderBtn" data-magnetic>Fazer um pedido <span>→</span></button></section>
+        <footer class="store-footer"><div class="store-footer-brand"><img src="assets/logo.svg" alt="RafahStudio"><span>RafahStudio</span></div><div id="storeSocialDock"></div><small>Valores são apresentados como referência. Condições de pagamento e produção são confirmadas antes da execução.</small></footer>
+      </main>
+    </div>
+    <aside id="storeCartDrawer" class="store-cart-drawer" aria-hidden="true">
+      <div class="store-cart-head"><div><span class="store-kicker">SELEÇÃO</span><h2>Meu pedido</h2></div><button class="store-close" id="storeCartClose" type="button">×</button></div>
+      <div id="storeCartItems" class="store-cart-items"></div>
+      <div class="store-cart-footer"><div><span>Total estimado</span><strong id="storeCartTotal">R$ 0,00</strong></div><small>Você só envia a solicitação; a produção e o pagamento são confirmados pelo estúdio.</small><button class="store-primary wide" id="storeCheckoutBtn" type="button">Continuar pedido <span>→</span></button><button class="store-ghost wide" id="storeWhatsBtn" type="button">Falar pelo WhatsApp</button></div>
+    </aside><div id="storeCartBackdrop" class="store-cart-backdrop hidden"></div>
+  </section>
+
   <div id="app" class="app hidden">
     <aside class="sidebar" id="sidebar">
       <div class="side-brand logo-only" aria-label="RafahStudio">
@@ -105,7 +150,7 @@
         <button class="nav-item" data-page="clientes" title="Clientes" aria-label="Clientes"><span class="nav-icon"><img src="assets/icons/clients.svg" alt=""></span><span>Clientes</span></button>
         <button class="nav-item" data-page="conversas" title="Conversas" aria-label="Conversas"><span class="nav-icon"><img src="assets/icons/chat.svg" alt=""></span><span>Conversas</span><em id="navConversations">0</em></button>
         <button class="nav-item" data-page="catalogo" title="Catálogo" aria-label="Catálogo"><span class="nav-icon"><img src="assets/icons/catalog.svg" alt=""></span><span>Catálogo</span></button>
-        <button class="nav-item" data-page="produtos" title="Produtos" aria-label="Produtos"><span class="nav-icon"><img src="assets/icons/products.svg" alt=""></span><span>Produtos</span></button>
+        <button class="nav-item" data-page="produtos" title="Produtos" aria-label="Produtos"><span class="nav-icon"><img src="assets/icons/products.svg" alt=""></span><span>Produtos</span></button>\n        <button class="nav-item" data-page="loja" title="Loja" aria-label="Loja"><span class="nav-icon"><img src="assets/icons/store.svg" alt=""></span><span>Loja</span><em id="navStoreRequests">0</em></button>
         <button class="nav-item" data-page="orcamentos" title="Orçamentos" aria-label="Orçamentos"><span class="nav-icon"><img src="assets/icons/quotes.svg" alt=""></span><span>Orçamentos</span></button>
         <button class="nav-item" data-page="financeiro" title="Financeiro" aria-label="Financeiro"><span class="nav-icon"><img src="assets/icons/finance.svg" alt=""></span><span>Financeiro</span></button>
       </nav>
@@ -127,7 +172,7 @@
         <div class="breadcrumb"><span id="pageEyebrow">VISÃO GERAL</span><b id="pageTitle">Dashboard</b></div>
         <div class="top-actions">
           <label class="global-search"><span>⌕</span><input id="globalSearch" placeholder="Buscar pedidos, clientes, produtos..."></label>
-          <button class="icon-btn notification-trigger" id="notificationBtn" title="Notificações" aria-label="Notificações"><span class="notification-glyph"><img src="assets/icons/notification.svg" alt=""></span><em id="notifyCount">0</em></button>
+          <button class="icon-btn notification-trigger" id="notificationBtn" title="Notificações" aria-label="Notificações"><span class="notification-glyph"><img src="assets/icons/notification2.svg" alt=""></span><em id="notifyCount">0</em></button>
           <button class="top-account" id="topAccountBtn" type="button" title="Meu perfil" aria-label="Meu perfil">
             <span id="topAccountAvatar" class="avatar avatar-md">JG</span>
             <span class="top-account-copy"><b id="topAccountName">Designer</b><small id="topAccountRole">Designer gráfico</small></span>
@@ -141,7 +186,7 @@
         <button class="mobile-nav-item" data-page="pedidos" title="Pedidos" aria-label="Pedidos"><span><img src="assets/icons/orders.svg" alt=""></span><em id="mobileNavOrders">0</em></button>
         <button class="mobile-nav-item" data-page="conversas" title="Conversas" aria-label="Conversas"><span><img src="assets/icons/chat.svg" alt=""></span><em id="mobileNavConversations">0</em></button>
         <button class="mobile-nav-item" data-page="clientes" title="Clientes" aria-label="Clientes"><span><img src="assets/icons/clients.svg" alt=""></span></button>
-        <button class="mobile-nav-item" data-page="produtos" title="Produtos" aria-label="Produtos"><span><img src="assets/icons/products.svg" alt=""></span></button>
+        <button class="mobile-nav-item" data-page="produtos" title="Produtos" aria-label="Produtos"><span><img src="assets/icons/products.svg" alt=""></span></button>\n        <button class="mobile-nav-item" data-page="loja" title="Loja" aria-label="Loja"><span><img src="assets/icons/store.svg" alt=""></span><em id="mobileNavStoreRequests">0</em></button>
         <button class="mobile-nav-item more" id="mobileMoreBtn" type="button" title="Mais" aria-label="Mais"><span>•••</span></button>
       </nav>
 
@@ -182,6 +227,12 @@
 
       <section id="orcamentos" class="page"><div class="page-head"><div><span class="eyebrow">COMERCIAL</span><h1>Orçamentos</h1><p>Crie propostas, envie em PDF e transforme em pedido quando aprovado.</p></div><button class="btn primary" data-action="new-quote">+ Novo orçamento</button></div><div class="toolbar"><label class="search-box"><span>⌕</span><input id="quoteSearch" placeholder="Buscar orçamento por projeto ou cliente..."></label><select id="quoteFilter"><option value="all">Todos os status</option><option>Rascunho</option><option>Enviado</option><option>Aprovado</option><option>Recusado</option></select></div><div class="table-card"><div class="table-head quote-head"><span>Projeto</span><span>Cliente</span><span>Validade</span><span>Status</span><span>Total</span><span></span></div><div id="quotesTable"></div></div></section>
 
+      <section id="loja" class="page">
+        <div class="page-head"><div><span class="eyebrow">VITRINE PÚBLICA</span><h1>Loja</h1><p>Publique seus produtos e compartilhe sua vitrine com clientes.</p></div><div class="page-head-actions"><button class="btn secondary" id="copyStoreLinkBtn">↗ Copiar link</button><button class="btn primary" id="openStorePreviewBtn">Abrir loja →</button></div></div>
+        <div class="store-admin-hero card"><div><span class="eyebrow">SUA LOJA</span><h2>Uma vitrine para seus produtos</h2><p id="storeLinkText">Gere seu link público para compartilhar.</p><div class="store-admin-actions"><button class="btn secondary small" id="generateStoreLinkBtn">Gerar link</button><button class="btn secondary small" id="copyStoreLinkBtn2">Copiar</button></div></div><div class="store-admin-stats"><div><small>Publicados</small><strong id="storePublishedCount">0</strong></div><div><small>Produtos</small><strong id="storeAllCount">0</strong></div><div><small>Solicitações</small><strong id="storeRequestCount">0</strong></div></div></div>
+        <div class="card store-admin-products"><div class="card-title"><div><b>Produtos da loja</b><small>Escolha o que ficará visível na vitrine.</small></div><button class="btn primary small" data-action="new-product">+ Cadastrar produto</button></div><div id="storeAdminProductList"></div></div>
+        <div class="card store-request-card"><div class="card-title"><div><b>Solicitações recebidas</b><small>Pedidos iniciados pela loja pública.</small></div></div><div id="storeRequestsList"></div></div>
+      </section>
       <section id="financeiro" class="page"><div class="page-head"><div><span class="eyebrow">FINANCEIRO</span><h1>Financeiro</h1><p>Veja o que entrou, o que está pendente e filtre por período.</p></div></div><div class="filter-card"><label>Data inicial<input type="date" id="finStart"></label><label>Data final<input type="date" id="finEnd"></label><label>Status<select id="finStatus"><option value="all">Todos</option><option value="paid">Pagos</option><option value="pending">Pendentes</option></select></label><button class="btn secondary" id="clearFinance">Limpar</button></div><div class="finance-metrics"><div class="finance-total"><small>Total filtrado</small><strong id="fTotal">R$ 0,00</strong></div><div><small>Recebido</small><strong id="fPaid">R$ 0,00</strong></div><div><small>Pendente</small><strong id="fPending">R$ 0,00</strong></div><div><small>Ticket médio</small><strong id="fAverage">R$ 0,00</strong></div></div><div class="table-card"><div class="table-head finance-head"><span>Projeto</span><span>Cliente</span><span>Data</span><span>Status</span><span>Valor</span><span></span></div><div id="financeTable"></div></div></section>
 
       <section id="perfil" class="page"><div class="page-head"><div><span class="eyebrow">SUA CONTA</span><h1>Meu perfil</h1><p>Personalize sua apresentação e o que o cliente verá depois de enviar um briefing.</p></div><button class="btn primary" id="saveProfileBtn">Salvar alterações</button></div><div class="profile-layout"><div class="card profile-card"><div id="profileCover" class="profile-cover"><label class="profile-cover-edit" title="Alterar banner" aria-label="Alterar banner">✎<input type="file" id="profileBanner" accept="image/jpeg,image/png,image/webp"></label></div><div class="profile-main"><div class="avatar-upload"><div id="profileAvatar" class="avatar avatar-xl">JG</div><label class="upload-avatar">Alterar foto<input type="file" id="profilePhoto" accept="image/*"></label></div><div class="profile-fields"><div class="two-col"><label>Nome<input id="dName"></label><label>Nome da marca<input id="dBrand"></label></div><div class="two-col"><label>WhatsApp<input id="dWhats"></label><label>E-mail<input id="dEmail" type="email"></label></div><div class="two-col"><label>Instagram<input id="dInsta" placeholder="@seuinstagram"></label><label>Portfólio<input id="dPortfolio" placeholder="https://seusite.com"></label></div><div class="profile-payment-box"><div><span class="eyebrow">PAGAMENTO PELO CHAT</span><b>Chave PIX</b><small>Fica salva no seu perfil, mas só é enviada ao cliente quando você tocar em “Enviar PIX” dentro de um pedido.</small></div><div class="two-col"><label>Tipo de chave<select id="dPixType"><option value="CPF">CPF</option><option value="CNPJ">CNPJ</option><option value="E-mail">E-mail</option><option value="Telefone">Telefone</option><option value="Aleatória">Aleatória</option></select></label><label>Chave PIX<input id="dPixKey" placeholder="Sua chave PIX"></label></div><label>Nome do recebedor<input id="dPixName" placeholder="Nome que aparecerá no pagamento"></label></div><label>Área de atuação<input id="dArea"></label><label>Descrição curta<textarea id="dBio" rows="4" placeholder="Uma apresentação curta para seus clientes."></textarea></label></div></div></div><div class="card profile-side"><b>Conta</b><small>Usuário</small><strong id="profileUser">—</strong><div class="profile-tip">Seu perfil define as informações de contato e a apresentação que podem aparecer para seus clientes.</div><div class="profile-tip notification-tip"><b>Notificações no celular</b><span>Toque no sino no topo e permita as notificações do navegador. Se instalar o RafahStudio na tela inicial, a experiência fica ainda mais parecida com um app.</span></div><button class="btn secondary wide" id="exportBackupBtn">↓ Exportar backup</button><label class="import-backup btn secondary wide">↑ Importar backup<input type="file" id="importBackup" accept="application/json"></label></div></div></section>

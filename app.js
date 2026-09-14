@@ -60,10 +60,12 @@ function initSupabaseClient(){
 initSupabaseClient();
 const ownerTokenKey = user => `${APP}:owner-token:${user||'default'}`;
 const publicTokenKey = user => `${APP}:public-token:${user||'default'}`;
+const storeTokenKey = user => `${APP}:store-token:${user||'default'}`;
 function randomToken(){return (crypto.randomUUID?.()||uid('tok'))+'-'+Math.random().toString(36).slice(2)+Date.now().toString(36);}
 function accountScopeId(){return currentUser?.id||currentUser?.user||currentUser?.email||currentUser?.username||'default';}
 function getOwnerToken(){const u=accountScopeId();let t=localStorage.getItem(ownerTokenKey(u));if(!t){t=randomToken();localStorage.setItem(ownerTokenKey(u),t);}return t;}
 function getPublicToken(){const u=accountScopeId();let t=localStorage.getItem(publicTokenKey(u));if(!t){t=randomToken();localStorage.setItem(publicTokenKey(u),t);}return t;}
+function getStoreToken(){const u=accountScopeId();let t=localStorage.getItem(storeTokenKey(u));if(!t){t=randomToken();localStorage.setItem(storeTokenKey(u),t);}return t;}
 function isPublicHashRoute(){
   const hash=String(location.hash||'');
   return hash.startsWith('#briefing=') || hash.startsWith('#pedido=');
@@ -866,11 +868,11 @@ async function showDesktopNotification(title,body,tag='rafahstudio'){
 }
 function speakNotification(text){const mode=getNotificationPrefs().mode;if((mode!=='voice'&&mode!=='sound_voice')||!('speechSynthesis'in window))return;try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.lang='pt-BR';u.rate=.96;u.pitch=1;u.volume=.85;speechSynthesis.speak(u);}catch(e){}}
 function showNotificationPopup(title,body,kind='info',linkPage='pedidos',linkId=null){document.querySelectorAll('.rs-notification-popup').forEach(x=>x.remove());const el=document.createElement('div');el.className=`rs-notification-popup ${esc(kind)}`;const avatar=designer.photo?`<img src="${esc(designer.photo)}" alt="">`:`<span>${esc(initials(designer.name||'RafahStudio'))}</span>`;el.innerHTML=`<div class="rs-popup-top"><span class="rs-popup-brand">${avatar}</span><div><small>RAFAHSTUDIO</small><b>${esc(kind==='warning'?'Revisão necessária':kind==='success'?'Tudo certo':'Nova atividade')}</b></div><button type="button" aria-label="Fechar">×</button></div><div class="rs-popup-content"><strong>${esc(title)}</strong><p>${esc(body)}</p></div><div class="rs-popup-actions"><button type="button" class="rs-popup-open">Abrir pedido</button><button type="button" class="rs-popup-dismiss">Agora não</button></div>`;el.querySelector('.rs-popup-open').onclick=()=>{el.remove();if(linkId)openOrderView(linkId);else go(linkPage);};el.querySelector('.rs-popup-dismiss').onclick=()=>el.remove();el.querySelector('.rs-popup-top button').onclick=()=>el.remove();document.body.appendChild(el);setTimeout(()=>{if(el.isConnected){el.classList.add('out');setTimeout(()=>el.remove(),280)}},9000);}
-function notify(title,body,kind='info',linkPage='pedidos',linkId=null){notifications.unshift({id:uid('ntf'),title,body,kind,created:new Date().toISOString(),read:false,linkPage,linkId});notifications=notifications.slice(0,80);persist();renderNotifications();showNotificationPopup(title,body,kind,linkPage,linkId);playNotificationSound();speakNotification(`${title}. ${body}`);if(['Novo briefing recebido','Alteração solicitada','Arte aprovada','Nova mensagem do cliente'].some(x=>title.includes(x)))showDesktopNotification(title,body,'rafahstudio-'+kind);}
+function notify(title,body,kind='info',linkPage='pedidos',linkId=null){notifications.unshift({id:uid('ntf'),title,body,kind,created:new Date().toISOString(),read:false,linkPage,linkId});notifications=notifications.slice(0,80);persist();renderNotifications();showNotificationPopup(title,body,kind,linkPage,linkId);pulseNotificationBell();playNotificationSound();speakNotification(`${title}. ${body}`);if(['Novo briefing recebido','Alteração solicitada','Arte aprovada','Nova mensagem do cliente'].some(x=>title.includes(x)))showDesktopNotification(title,body,'rafahstudio-'+kind);}
 function formatRelative(iso){const diff=Math.max(0,Date.now()-new Date(iso).getTime());const min=Math.floor(diff/60000);if(min<1)return'agora';if(min<60)return`há ${min} min`;const h=Math.floor(min/60);if(h<24)return`há ${h} h`;const d=Math.floor(h/24);return`há ${d} d`;}
 function statusClass(s){return ({'Novo':'status-new','Em andamento':'status-doing','Esperando aprovação':'status-wait','Alteração':'status-change','Entregue':'status-done','Pago':'status-paid','Finalizado':'status-finalized'})[s]||'';}
 function priorityClass(p){return ({Alta:'priority-high',Urgente:'priority-urgent'})[p]||'';}
-function pageMeta(page){return {dashboard:['VISÃO GERAL','Dashboard'],pedidos:['PROJETOS','Pedidos'],clientes:['RELACIONAMENTO','Clientes'],catalogo:['PORTFÓLIO','Catálogo'],produtos:['CATÁLOGO','Produtos'],orcamentos:['COMERCIAL','Orçamentos'],financeiro:['FINANCEIRO','Financeiro'],perfil:['SUA CONTA','Meu perfil'],conversas:['RELACIONAMENTO','Conversas']}[page]||['','RafahStudio'];}
+function pageMeta(page){return {dashboard:['VISÃO GERAL','Dashboard'],pedidos:['PROJETOS','Pedidos'],clientes:['RELACIONAMENTO','Clientes'],catalogo:['PORTFÓLIO','Catálogo'],produtos:['CATÁLOGO','Produtos'],loja:['VITRINE PÚBLICA','Loja'],orcamentos:['COMERCIAL','Orçamentos'],financeiro:['FINANCEIRO','Financeiro'],perfil:['SUA CONTA','Meu perfil'],conversas:['RELACIONAMENTO','Conversas']}[page]||['','RafahStudio'];}
 function go(page){ currentPage=page; document.documentElement.classList.toggle('show-dashboard-breadcrumb',page==='dashboard'); $$('.page').forEach(p=>p.classList.toggle('active',p.id===page)); $$('.nav-item[data-page], .mobile-nav-item[data-page]').forEach(n=>n.classList.toggle('active',n.dataset.page===page)); const [ey,t]=pageMeta(page); $('#pageEyebrow').textContent=ey; $('#pageTitle').textContent=t; $('#notificationPanel').classList.remove('open'); $('#sidebar').classList.remove('mobile-open'); render(); window.scrollTo({top:0,behavior:'smooth'}); }
 
 function render(){
@@ -885,6 +887,7 @@ function render(){
     case 'clientes': renderClients(); break;
     case 'catalogo': renderCatalog(); break;
     case 'produtos': renderProducts(); break;
+    case 'loja': initStoreAdmin(); break;
     case 'orcamentos': renderQuotes(); break;
     case 'financeiro': renderFinance(); break;
     case 'perfil': renderProfile(); break;
@@ -1003,11 +1006,158 @@ function clientStats(name){const os=orders.filter(o=>o.client.toLowerCase()===na
 let productsRemoteFingerprint='';
 async function refreshProductsFromSupabase(){
   if(!supabaseClient||!currentUser||document.hidden)return;
-  try{const {data,error}=await supabaseClient.rpc('get_products_for_owner',{p_owner_secret:getOwnerToken()});if(error)throw error;const next=(Array.isArray(data)?data:[]).map(x=>({...x,price:Number(x.price)||0,created:x.created_at||todayISO()}));const fp=JSON.stringify(next.map(x=>[x.id,x.updated_at||x.created_at,x.name,x.price,x.image_url]));if(fp===productsRemoteFingerprint)return;productsRemoteFingerprint=fp;products=next;persist();if(currentPage==='produtos')renderProducts();}catch(e){console.warn('Produtos online:',e);}
+  try{const {data,error}=await supabaseClient.rpc('get_products_for_owner',{p_owner_secret:getOwnerToken()});if(error)throw error;const next=(Array.isArray(data)?data:[]).map(x=>({...x,price:Number(x.price)||0,is_published:!!x.is_published,created:x.created_at||todayISO()}));const fp=JSON.stringify(next.map(x=>[x.id,x.updated_at||x.created_at,x.name,x.price,x.image_url]));if(fp===productsRemoteFingerprint)return;productsRemoteFingerprint=fp;products=next;persist();if(currentPage==='produtos')renderProducts();if(currentPage==='loja')renderStoreAdmin();}catch(e){console.warn('Produtos online:',e);}
 }
-function renderProducts(){const q=($('#productSearch')?.value||'').toLowerCase().trim();const list=products.filter(x=>`${x.name||''} ${x.category||''} ${x.description||''}`.toLowerCase().includes(q));const el=$('#productsGrid');if(!el)return;el.innerHTML=list.map(x=>`<article class="product-card"><div class="product-cover">${x.image_url?`<img src="${esc(x.image_url)}" alt="${esc(x.name)}">`:'<span>▧</span>'}</div><div class="product-body"><div class="product-headline"><h3>${esc(x.name)}</h3><strong>${money(x.price)}</strong></div><small class="product-category">${esc(x.category||'Produto')}</small><p>${esc(x.description||'')}</p><div class="product-actions"><button class="icon-action" title="Baixar imagem" data-download-product="${esc(x.id)}">↓</button><button class="btn secondary small" data-edit-product="${esc(x.id)}">Editar</button><button class="btn secondary small danger" data-delete-product="${esc(x.id)}">Remover</button></div></div></article>`).join('')||`<div class="empty-state"><span>▧</span><h3>Nenhum produto cadastrado</h3><p>Cadastre cartaz, logo, identidade visual e outros serviços com preço e imagem.</p><button class="btn primary" data-action="new-product">+ Cadastrar produto</button></div>`;}
+
+/* ==========================================================
+   RAFAHSTUDIO STORE — public storefront
+   ========================================================== */
+let storePublicTokenCache='', storeItems=[], storeCart=[], storeCategory='all', storeRequestPollTimer=null, storeLastRequestId=0;
+
+function storeTokenFromHash(){
+  try{
+    if(!location.hash.startsWith('#loja='))return '';
+    return decodeURIComponent(location.hash.slice('#loja='.length));
+  }catch{return '';}
+}
+function storeUrl(){
+  const token=getStoreToken();
+  const base=location.href.split('#')[0];
+  return `${base}#loja=${encodeURIComponent(token)}`;
+}
+async function ensureStoreLink(){
+  if(!currentUser||!supabaseClient)return '';
+  await ensurePublicLink();
+  const token=getStoreToken(), owner=getOwnerToken();
+  try{
+    const {error}=await supabaseClient.rpc('register_store_link',{p_store_token:token,p_owner_secret:owner});
+    if(error)throw error;
+    return storeUrl();
+  }catch(e){console.warn('[RafahStudio] Link da loja:',e);return storeUrl();}
+}
+async function publicBriefingUrlForCurrentStore(){const token=storeTokenFromHash();try{const {data}=await supabaseClient.rpc('get_public_token_for_store',{p_store_token:token});const publicToken=String(data||'');if(!publicToken)return '';const base=location.href.split('#')[0];return `${base}#briefing=${encodeURIComponent(publicToken)}`;}catch{return '';}}
+function storeOpen(){
+  const page=$('#storePage'); return !!page&&!page.classList.contains('hidden');
+}
+function storeMoney(v){return money(v);}
+function storeCartTotal(){return storeCart.reduce((s,x)=>s+(Number(x.price)||0)*(Number(x.qty)||1),0);}
+function renderStoreCart(){
+  const box=$('#storeCartItems'), total=$('#storeCartTotal'), count=$('#storeCartCount');
+  if(count)count.textContent=storeCart.reduce((s,x)=>s+(x.qty||1),0);
+  if(total)total.textContent=storeMoney(storeCartTotal());
+  if(!box)return;
+  box.innerHTML=storeCart.length?storeCart.map(x=>`<div class="store-cart-row"><img src="${esc(x.image_url||'')}" alt=""><div><h4>${esc(x.name)}</h4><small>${storeMoney(x.price)} cada</small><div class="store-cart-qty"><button type="button" data-store-qty="${x.id}" data-dir="-1">−</button><b>${x.qty||1}</b><button type="button" data-store-qty="${x.id}" data-dir="1">+</button></div></div><strong>${storeMoney((Number(x.price)||0)*(x.qty||1))}</strong></div>`).join(''):`<div class="store-empty"><b>＋</b><h3>Seu pedido está vazio</h3><p>Adicione produtos da vitrine para começar.</p></div>`;
+}
+function openStoreCart(open=true){
+  const d=$('#storeCartDrawer'),b=$('#storeCartBackdrop');if(!d||!b)return;
+  d.classList.toggle('open',open);d.setAttribute('aria-hidden',open?'false':'true');b.classList.toggle('hidden',!open);renderStoreCart();
+}
+function addStoreItem(item){
+  const found=storeCart.find(x=>String(x.id)===String(item.id));
+  if(found)found.qty=(found.qty||1)+1;else storeCart.push({...item,qty:1});
+  renderStoreCart();openStoreCart(true);
+}
+function renderStoreProducts(){
+  const grid=$('#storeProductGrid'), empty=$('#storeEmpty'), sk=$('#storeSkeletons');if(!grid)return;
+  const q=($('#storeSearch')?.value||'').trim().toLowerCase();
+  const list=storeItems.filter(x=>(storeCategory==='all'||String(x.category||'').toLowerCase()===storeCategory.toLowerCase())&&(`${x.name||''} ${x.category||''} ${x.description||''}`).toLowerCase().includes(q));
+  if($('#storeResultCount'))$('#storeResultCount').textContent=`${list.length} ${list.length===1?'item':'itens'}`;
+  grid.innerHTML=list.map(x=>`<article class="store-product-card" data-store-product="${x.id}" data-reveal><div class="store-product-cover">${x.image_url?`<img src="${esc(x.image_url)}" alt="${esc(x.name)}" loading="lazy">`:`<span class="store-no-image">✦</span>`}</div><div class="store-product-body"><span class="store-product-cat">${esc(x.category||'Serviço')}</span><h3>${esc(x.name)}</h3><p>${esc(x.description||'Serviço criativo RafahStudio.')}</p><div class="store-product-bottom"><strong class="store-product-price">${storeMoney(x.price)}</strong><button class="store-add" type="button" data-store-add="${x.id}" data-magnetic>Adicionar</button></div></div></article>`).join('');
+  sk?.classList.add('hidden');grid.classList.remove('hidden');empty?.classList.toggle('hidden',!list.length);
+  setupStoreReveal();
+}
+async function loadStore(){
+  const token=storeTokenFromHash();if(!token||!supabaseClient)return;
+  storePublicTokenCache=token;
+  const grid=$('#storeProductGrid'),sk=$('#storeSkeletons');grid?.classList.add('hidden');sk?.classList.remove('hidden');
+  try{
+    const {data,error}=await supabaseClient.rpc('get_products_for_store',{p_store_token:token});
+    if(error)throw error;
+    storeItems=(Array.isArray(data)?data:[]).map(x=>({...x,price:Number(x.price)||0}));
+    renderStoreProducts();
+    const profileRes=await supabaseClient.rpc('get_public_profile_for_store',{p_store_token:token});const profile=Array.isArray(profileRes.data)?(profileRes.data[0]||{}):(profileRes.data||{});
+    const name=profile?.brand||'RafahStudio';const bn=$('#storeBrandName');if(bn)bn.textContent=name;
+    const socials=$('#storeSocialDock');if(socials)renderPublicSocials(profile);
+  }catch(e){
+    console.warn('[RafahStudio] Loja pública:',e);
+    storeItems=[];renderStoreProducts();
+    toast(e?.message||'Não foi possível carregar a loja.','error');
+  }
+}
+function setupStoreReveal(){
+  const els=$$('#storePage [data-reveal]');
+  if(!('IntersectionObserver'in window)){els.forEach(x=>x.classList.add('is-visible'));return;}
+  const io=new IntersectionObserver(entries=>entries.forEach(e=>{if(e.isIntersecting){e.target.classList.add('is-visible');io.unobserve(e.target);}}),{threshold:.08,rootMargin:'0px 0px -30px'});
+  els.forEach((el,i)=>{if(!el.classList.contains('is-visible')){el.style.transitionDelay=`${Math.min(i*35,280)}ms`;io.observe(el);}});
+}
+function setupStoreMotion(){
+  if(window.__rafahStoreMotionBound)return; window.__rafahStoreMotionBound=true;
+  if(storeOpen())document.body.classList.add('store-enter');
+  const reduce=matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+  if(reduce)return;
+  const page=$('#storePage');if(!page)return;
+  page.addEventListener('pointermove',e=>{
+    const target=e.target.closest('[data-magnetic]');if(!target)return;
+    const r=target.getBoundingClientRect(),dx=(e.clientX-(r.left+r.width/2))*0.08,dy=(e.clientY-(r.top+r.height/2))*0.08;
+    target.style.transform=`translate3d(${dx}px,${dy}px,0)`;
+  });
+  page.addEventListener('pointerout',e=>{const target=e.target.closest('[data-magnetic]');if(target&&!target.contains(e.relatedTarget))target.style.transform='';});
+  const parallaxEls=$$('[data-parallax]',page);
+  let ticking=false;
+  const onScroll=()=>{if(ticking)return;ticking=true;requestAnimationFrame(()=>{const y=window.scrollY;parallaxEls.forEach(el=>{const speed=Number(el.dataset.parallax)||0;el.style.transform=`translate3d(0,${y*speed}px,0)`;});ticking=false;});};
+  window.addEventListener('scroll',onScroll,{passive:true});
+}
+function openStoreCheckout(){
+  if(!storeCart.length){toast('Adicione ao menos um item ao pedido.','info');return;}
+  const items=storeCart.map(x=>({...x}));
+  modal(`<div class="modal-head"><div><span class="eyebrow">SOLICITAÇÃO DE PEDIDO</span><h2>Finalize sua solicitação</h2><p class="muted">Seus dados serão enviados ao RafahStudio para confirmação.</p></div><button class="close-modal" data-close-modal>×</button></div><form id="storeCheckoutForm"><div class="store-checkout-summary">${items.map(x=>`<div><span>${esc(x.name)} × ${x.qty}</span><b>${storeMoney((Number(x.price)||0)*x.qty)}</b></div>`).join('')}<strong>Total estimado <b>${storeMoney(storeCartTotal())}</b></strong></div><div class="two-col"><label>Seu nome<input id="storeCustomerName" required></label><label>WhatsApp<input id="storeCustomerWhats" inputmode="tel" required></label></div><label>E-mail (opcional)<input id="storeCustomerEmail" type="email"></label><label>Observações<textarea id="storeCustomerNote" rows="3" placeholder="Prazo, tamanho, referência ou outro detalhe."></textarea></label><div class="modal-actions"><button type="button" class="btn secondary" data-close-modal>Cancelar</button><button class="btn primary" type="submit">Enviar solicitação →</button></div></form>`);
+  $('#storeCheckoutForm').onsubmit=async e=>{
+    e.preventDefault();const btn=e.submitter;btn.disabled=true;
+    try{
+      const token=storePublicTokenCache||storeTokenFromHash();
+      const payload=items.map(x=>({id:x.id,qty:x.qty}));
+      const {data,error}=await supabaseClient.rpc('submit_store_order',{p_store_token:token,p_customer_name:$('#storeCustomerName').value.trim(),p_whatsapp:$('#storeCustomerWhats').value.trim(),p_email:$('#storeCustomerEmail').value.trim(),p_items:payload,p_note:$('#storeCustomerNote').value.trim()});
+      if(error)throw error;
+      closeModal();storeCart=[];renderStoreCart();toast(`Solicitação #${data} enviada ao estúdio. Obrigado!`,'success');
+    }catch(err){toast(err?.message||'Não foi possível enviar sua solicitação.','error');btn.disabled=false;}
+  };
+}
+function pulseNotificationBell(){
+  const bells=$$('#notificationBtn,.store-bell');
+  bells.forEach(b=>{b.classList.add('has-new','vibrate');setTimeout(()=>b.classList.remove('vibrate'),850);});
+}
+function renderStoreAdmin(){
+  const all=products||[], pub=all.filter(x=>x.is_published);
+  $('#storePublishedCount')?.replaceChildren(document.createTextNode(String(pub.length)));
+  $('#storeAllCount')?.replaceChildren(document.createTextNode(String(all.length)));
+  const list=$('#storeAdminProductList');if(!list)return;
+  list.innerHTML=all.map(x=>`<div class="store-admin-product-row"><div>${x.image_url?`<img src="${esc(x.image_url)}" alt="">`:'<span class="store-no-image">✦</span>'}</div><div><b>${esc(x.name)}</b><small class="muted">${esc(x.category||'Produto')} • ${storeMoney(x.price)}</small></div><label class="store-publish-toggle"><input type="checkbox" data-store-publish="${x.id}" ${x.is_published?'checked':''}> Publicar</label><button class="btn secondary small" data-edit-product="${x.id}">Editar</button></div>`).join('')||'<div class="empty-state"><h3>Nenhum produto cadastrado</h3><p>Cadastre seu primeiro produto na aba Produtos.</p></div>';
+}
+async function refreshStoreRequests(){
+  if(!supabaseClient||!currentUser)return;
+  try{
+    const {data,error}=await supabaseClient.rpc('get_store_order_requests_for_owner',{p_owner_secret:getOwnerToken()});
+    if(error)throw error;
+    const rows=Array.isArray(data)?data:[];$('#storeRequestCount')?.replaceChildren(document.createTextNode(String(rows.length)));
+    const latest=Number(rows[0]?.id||0);
+    if(storeLastRequestId&&latest>storeLastRequestId){
+      const r=rows[0];
+      notify('Novo pedido na loja',`${r.customer_name} • ${storeMoney(r.total)}`,'info','loja');
+    }
+    if(latest>storeLastRequestId)storeLastRequestId=latest;
+    const el=$('#storeRequestsList');if(!el)return;
+    el.innerHTML=rows.map(r=>`<article class="store-request-row"><strong>${esc(r.customer_name)}</strong><div class="store-request-meta"><span>${esc(r.whatsapp||'Sem WhatsApp')}</span><span>${esc(r.email||'')}</span><span>${formatRelative(r.created_at)}</span><b>${storeMoney(r.total)}</b></div><div class="muted">${(r.items||[]).map(x=>`${esc(x.name||'Produto')} × ${x.qty||1}`).join(' • ')}</div>${r.note?`<p>${esc(r.note)}</p>`:''}</article>`).join('')||'<div class="empty-state"><h3>Nenhuma solicitação ainda</h3><p>Quando um cliente finalizar um pedido pela loja, ele aparecerá aqui.</p></div>';
+  }catch(e){console.warn('[RafahStudio] Solicitações da loja:',e);}
+}
+function initStoreAdmin(){
+  if(!currentUser)return;
+  const link=storeUrl();const t=$('#storeLinkText');if(t)t.textContent=link;
+  renderStoreAdmin();refreshStoreRequests();clearInterval(storeRequestPollTimer);storeRequestPollTimer=setInterval(()=>{if(currentPage==='loja')refreshStoreRequests();},15000);
+}
+
+function renderProducts(){const q=($('#productSearch')?.value||'').toLowerCase().trim();const list=products.filter(x=>`${x.name||''} ${x.category||''} ${x.description||''}`.toLowerCase().includes(q));const el=$('#productsGrid');if(!el)return;el.innerHTML=list.map(x=>`<article class="product-card"><div class="product-cover">${x.image_url?`<img src="${esc(x.image_url)}" alt="${esc(x.name)}">`:'<span>▧</span>'}</div><div class="product-body"><div class="product-headline"><h3>${esc(x.name)}</h3><strong>${money(x.price)}</strong></div><small class="product-category">${esc(x.category||'Produto')} ${x.is_published?'<b class="store-published-chip">Loja</b>':''}</small><p>${esc(x.description||'')}</p><div class="product-actions"><button class="icon-action" title="Baixar imagem" data-download-product="${esc(x.id)}">↓</button><button class="btn secondary small" data-edit-product="${esc(x.id)}">Editar</button><button class="btn secondary small danger" data-delete-product="${esc(x.id)}">Remover</button></div></div></article>`).join('')||`<div class="empty-state"><span>▧</span><h3>Nenhum produto cadastrado</h3><p>Cadastre cartaz, logo, identidade visual e outros serviços com preço e imagem.</p><button class="btn primary" data-action="new-product">+ Cadastrar produto</button></div>`;}
 async function uploadProductImage(file){if(!supabaseClient)throw new Error('Supabase não está disponível.');if(file.size>12*1024*1024)throw new Error('A imagem deve ter no máximo 12 MB.');const safe=(file.name||'produto').replace(/[^a-zA-Z0-9._-]/g,'_');const path=`products/${getOwnerToken()}/${Date.now()}-${safe}`;const {error}=await supabaseClient.storage.from('briefing-files').upload(path,file,{upsert:false,contentType:file.type||'image/png'});if(error)throw error;return supabaseClient.storage.from('briefing-files').getPublicUrl(path).data.publicUrl;}
-function openProductForm(item=null,onSaved=null){const x=item||{name:'',category:'Cartaz',description:'',price:0,image_url:''};modal(`<div class="modal-head"><div><span class="eyebrow">PRODUTO</span><h2>${item?'Editar produto':'Cadastrar produto'}</h2></div><button class="close-modal" data-close-modal>×</button></div><form id="productForm"><div class="two-col"><label>Nome do produto<input id="productName" value="${esc(x.name)}" required placeholder="Ex.: Cartaz para evento"></label><label>Categoria<select id="productCategory">${['Cartaz','Logo','Identidade visual','Post para Instagram','Social Media','Impressão','Outro'].map(c=>`<option ${c===x.category?'selected':''}>${c}</option>`).join('')}</select></label></div><div class="two-col"><label>Valor (R$)<input id="productPrice" type="number" min="0" step="0.01" value="${Number(x.price)||0}" required></label><label>Imagem para usar como referência<input id="productImage" type="file" accept="image/*,.pdf"></label></div><label>Descrição<textarea id="productDescription" rows="4">${esc(x.description||'')}</textarea></label><div id="productImagePreview" class="catalog-modal-preview">${x.image_url?`<img src="${esc(x.image_url)}" alt="Prévia">`:''}</div><div class="modal-actions"><button type="button" class="btn secondary" data-close-modal>Cancelar</button><button class="btn primary" type="submit">Salvar produto</button></div></form>`);let selected=null;$('#productImage').onchange=e=>{selected=e.target.files?.[0]||null;if(selected&&selected.type.startsWith('image/')){const r=new FileReader();r.onload=()=>$('#productImagePreview').innerHTML=`<img src="${r.result}" alt="Prévia">`;r.readAsDataURL(selected);}};$('#productForm').onsubmit=async e=>{e.preventDefault();const btn=e.submitter;btn.disabled=true;try{let url=x.image_url||'';if(selected)url=await uploadProductImage(selected);const data={name:$('#productName').value.trim(),category:$('#productCategory').value,description:$('#productDescription').value.trim(),price:Number($('#productPrice').value)||0,image_url:url};if(!data.name)throw new Error('Informe o nome do produto.');if(item){const {error}=await supabaseClient.rpc('update_product',{p_owner_secret:getOwnerToken(),p_id:item.id,p_name:data.name,p_category:data.category,p_description:data.description,p_price:data.price,p_image_url:data.image_url});if(error)throw error;products=products.map(v=>String(v.id)===String(item.id)?{...v,...data}:v);}else{const {data:id,error}=await supabaseClient.rpc('create_product',{p_owner_secret:getOwnerToken(),p_name:data.name,p_category:data.category,p_description:data.description,p_price:data.price,p_image_url:data.image_url});if(error)throw error;products.unshift({id,...data,created:todayISO()});}persist();closeModal();renderProducts();toast(item?'Produto atualizado.':'Produto cadastrado.','success');onSaved?.();}catch(err){toast(err?.message||'Não foi possível salvar o produto.','error');btn.disabled=false;}};}
+function openProductForm(item=null,onSaved=null){const x=item||{name:'',category:'Cartaz',description:'',price:0,image_url:''};modal(`<div class="modal-head"><div><span class="eyebrow">PRODUTO</span><h2>${item?'Editar produto':'Cadastrar produto'}</h2></div><button class="close-modal" data-close-modal>×</button></div><form id="productForm"><div class="two-col"><label>Nome do produto<input id="productName" value="${esc(x.name)}" required placeholder="Ex.: Cartaz para evento"></label><label>Categoria<select id="productCategory">${['Cartaz','Logo','Identidade visual','Post para Instagram','Social Media','Impressão','Outro'].map(c=>`<option ${c===x.category?'selected':''}>${c}</option>`).join('')}</select></label></div><div class="two-col"><label>Valor (R$)<input id="productPrice" type="number" min="0" step="0.01" value="${Number(x.price)||0}" required></label><label>Imagem para usar como referência<input id="productImage" type="file" accept="image/*,.pdf"></label></div><label class="store-publish-toggle product-publish-field"><input id="productPublished" type="checkbox" ${x.is_published?'checked':''}> Publicar este produto na loja</label><label>Descrição<textarea id="productDescription" rows="4">${esc(x.description||'')}</textarea></label><div id="productImagePreview" class="catalog-modal-preview">${x.image_url?`<img src="${esc(x.image_url)}" alt="Prévia">`:''}</div><div class="modal-actions"><button type="button" class="btn secondary" data-close-modal>Cancelar</button><button class="btn primary" type="submit">Salvar produto</button></div></form>`);let selected=null;$('#productImage').onchange=e=>{selected=e.target.files?.[0]||null;if(selected&&selected.type.startsWith('image/')){const r=new FileReader();r.onload=()=>$('#productImagePreview').innerHTML=`<img src="${r.result}" alt="Prévia">`;r.readAsDataURL(selected);}};$('#productForm').onsubmit=async e=>{e.preventDefault();const btn=e.submitter;btn.disabled=true;try{let url=x.image_url||'';if(selected)url=await uploadProductImage(selected);const data={name:$('#productName').value.trim(),category:$('#productCategory').value,description:$('#productDescription').value.trim(),price:Number($('#productPrice').value)||0,image_url:url,is_published:!!$('#productPublished')?.checked};if(!data.name)throw new Error('Informe o nome do produto.');if(item){const {error}=await supabaseClient.rpc('update_product',{p_owner_secret:getOwnerToken(),p_id:item.id,p_name:data.name,p_category:data.category,p_description:data.description,p_price:data.price,p_image_url:data.image_url});if(error)throw error;products=products.map(v=>String(v.id)===String(item.id)?{...v,...data}:v);}else{const {data:id,error}=await supabaseClient.rpc('create_product',{p_owner_secret:getOwnerToken(),p_name:data.name,p_category:data.category,p_description:data.description,p_price:data.price,p_image_url:data.image_url});if(error)throw error;products.unshift({id,...data,created:todayISO()});}if(supabaseClient&&data.is_published!==undefined){const pub=await supabaseClient.rpc('set_product_published',{p_owner_secret:getOwnerToken(),p_id:item?.id||products[0]?.id,p_is_published:data.is_published});if(pub.error)console.warn('[RafahStudio] Publicação na loja ainda não está disponível no banco:',pub.error.message||pub.error);}persist();closeModal();renderProducts();toast(item?'Produto atualizado.':'Produto cadastrado.','success');onSaved?.();}catch(err){toast(err?.message||'Não foi possível salvar o produto.','error');btn.disabled=false;}};}
 async function deleteProduct(id){const item=products.find(x=>String(x.id)===String(id));if(!item)return;if(!confirm(`Remover “${item.name}” dos produtos?`))return;const {error}=await supabaseClient.rpc('delete_product',{p_owner_secret:getOwnerToken(),p_id:id});if(error){toast(error.message||'Não foi possível remover.','error');return;}products=products.filter(x=>String(x.id)!==String(id));persist();renderProducts();toast('Produto removido.','info');}
 let catalogRemoteFingerprint='';
 async function refreshCatalogFromSupabase(){
@@ -1061,7 +1211,7 @@ function renderFinance(){
  $('#financeTable').innerHTML=list.map(o=>`<div class="table-row finance-row"><div class="project-cell"><span class="project-mark">${esc(initials(o.project))}</span><div><b>${esc(o.project)}</b><small>${esc(o.type)}</small></div></div><div>${esc(o.client)}</div><div>${dateLabel(o.created)}</div><div><span class="status-pill ${o.paid||o.status==='Pago'?'status-paid':'status-wait'}">${o.paid||o.status==='Pago'?'Pago':'Pendente'}</span></div><div><b>${money(o.value)}</b></div><div><button class="icon-action" data-open-order="${o.id}">↗</button></div></div>`).join('')||`<div class="empty-state"><span>◒</span><h3>Nenhum lançamento</h3><p>Ajuste os filtros ou crie pedidos com valor.</p></div>`;
 }
 function renderNotifications(){
- const unread=notifications.filter(n=>!n.read).length; $('#notifyCount').textContent=unread; $('#notifyCount').style.display=unread?'flex':'none';
+ const unread=notifications.filter(n=>!n.read).length; $('#notifyCount').textContent=unread; $('#notifyCount').style.display=unread?'flex':'none'; if(unread) pulseNotificationBell();
  $('#notificationsList').innerHTML=notifications.length?notifications.slice(0,30).map(n=>`<div class="notification-row ${n.read?'read':''}" data-notification="${esc(n.id)}"><button class="notification-main" type="button" data-open-notification="${esc(n.id)}"><span class="notif-dot ${n.kind}">${n.kind==='success'?'✓':n.kind==='warning'?'!':'i'}</span><span><b>${esc(n.title)}</b><small>${esc(n.body)}</small><time>${formatRelative(n.created)}</time></span></button><button class="notification-delete" type="button" data-delete-notification="${esc(n.id)}" title="Excluir">×</button></div>`).join(''):`<div class="empty-mini center"><span>✓</span><div><b>Nenhuma notificação</b><small>Quando algo importante acontecer, aparecerá aqui.</small></div></div>`; renderConversationBadges();
 }
 function renderProfile(){ $('#dName').value=designer.name||'';$('#dBrand').value=designer.brand||'';$('#dWhats').value=designer.whats||'';$('#dEmail').value=designer.email||'';$('#dInsta').value=designer.insta||'';$('#dPortfolio').value=designer.portfolio||'';if($('#dPixType'))$('#dPixType').value=designer.pixType||'CPF';if($('#dPixKey'))$('#dPixKey').value=designer.pixKey||'';if($('#dPixName'))$('#dPixName').value=designer.pixName||'';$('#dArea').value=designer.area||'';$('#dBio').value=designer.bio||''; const cover=$('#profileCover'); if(cover){cover.style.backgroundImage=designer.banner?`url(\"${designer.banner}\")`:'';cover.classList.toggle('has-image',!!designer.banner);} }
@@ -1853,6 +2003,22 @@ function setupEvents(){
  $('#testNotificationBtn')?.addEventListener('click',()=>{unlockNotificationAudio();playNotificationSound(true);speakNotification('Teste de notificação. Este aviso não será salvo.');showNotificationPopup('Teste de notificação','Este teste aparece somente como popup e não é salvo no histórico.');requestDesktopNotifications();});
 
  $('#globalSearch').oninput=e=>{const q=e.target.value.trim();if(q){go('pedidos');$('#orderSearch').value=q;renderOrders();}};$('#orderSearch').oninput=renderOrders;$('#orderSort').onchange=renderOrders;$('#clientSearch').oninput=renderClients;$('#catalogSearch').oninput=renderCatalog;$('#quoteSearch').oninput=renderQuotes;$('#quoteFilter').onchange=renderQuotes;['finStart','finEnd','finStatus'].forEach(id=>$('#'+id).onchange=renderFinance);$('#clearFinance').onclick=()=>{$('#finStart').value='';$('#finEnd').value='';$('#finStatus').value='all';renderFinance();};$('#copyBriefingBtn').onclick=()=>generateLink();
+ /* Loja pública */
+ $('#copyStoreLinkBtn,#copyStoreLinkBtn2') && $$('#copyStoreLinkBtn,#copyStoreLinkBtn2').forEach(b=>b?.addEventListener('click',async()=>{const url=await ensureStoreLink();if(url)copyText(url);}));
+ $('#generateStoreLinkBtn')?.addEventListener('click',async()=>{const url=await ensureStoreLink();const t=$('#storeLinkText');if(t)t.textContent=url;toast('Link da loja pronto para compartilhar.','success');});
+ $('#openStorePreviewBtn')?.addEventListener('click',async()=>{const url=await ensureStoreLink();if(url)window.open(url,'_blank','noopener');});
+ $('#storeAdminProductList')?.addEventListener('change',async e=>{const cb=e.target.closest('[data-store-publish]');if(!cb)return;const id=cb.dataset.storePublish;const item=products.find(x=>String(x.id)===String(id));if(!item)return;const {error}=await supabaseClient.rpc('set_product_published',{p_owner_secret:getOwnerToken(),p_id:id,p_is_published:cb.checked});if(error){cb.checked=!cb.checked;toast(error.message||'Não foi possível atualizar a publicação.','error');return;}item.is_published=cb.checked;persist();renderProducts();initStoreAdmin();toast(cb.checked?'Produto publicado na loja.':'Produto retirado da loja.','success');});
+ $('#storeCartClose')?.addEventListener('click',()=>openStoreCart(false));$('#storeCartBackdrop')?.addEventListener('click',()=>openStoreCart(false));$('#storeCartBtn')?.addEventListener('click',()=>openStoreCart(true));$('#storeCheckoutBtn')?.addEventListener('click',openStoreCheckout);
+ $('#storeWhatsBtn')?.addEventListener('click',async()=>{const p=await fetchPublicProfile();const n=String(p?.whatsapp||'').replace(/\D/g,'');if(!n){toast('O WhatsApp do estúdio ainda não está configurado.','info');return;}const items=storeCart.map(x=>`${x.name} x${x.qty}`).join(', ');window.open(`https://wa.me/${n.startsWith('55')?n:'55'+n}?text=${encodeURIComponent(`Olá! Tenho interesse em: ${items}. Total estimado: ${storeMoney(storeCartTotal())}.`)}`,'_blank','noopener');});
+ $('#storeProductGrid')?.addEventListener('click',e=>{const add=e.target.closest('[data-store-add]');if(add){const item=storeItems.find(x=>String(x.id)===String(add.dataset.storeAdd));if(item)addStoreItem(item);}});
+ $('#storeCartItems')?.addEventListener('click',e=>{const b=e.target.closest('[data-store-qty]');if(!b)return;const item=storeCart.find(x=>String(x.id)===String(b.dataset.storeQty));if(!item)return;item.qty=(item.qty||1)+Number(b.dataset.dir||0);if(item.qty<=0)storeCart=storeCart.filter(x=>String(x.id)!==String(item.id));renderStoreCart();});
+ $('#storeSearch')?.addEventListener('input',renderStoreProducts);
+ $$('#storePage [data-store-category]').forEach(b=>b.addEventListener('click',()=>{$$('#storePage [data-store-category]').forEach(x=>x.classList.remove('active'));b.classList.add('active');storeCategory=b.dataset.storeCategory;renderStoreProducts();}));
+ $$('#storePage [data-store-scroll]').forEach(a=>a.addEventListener('click',e=>{e.preventDefault();document.querySelector(a.getAttribute('href'))?.scrollIntoView({behavior:'smooth'});}));
+ $('#storeHeroShopBtn,#storeBannerOrderBtn')?.addEventListener('click',()=>document.querySelector('#store-catalog')?.scrollIntoView({behavior:'smooth'}));
+ $$('#storeHeroOrderBtn,#storeFeatureOrderBtn').forEach(b=>b?.addEventListener('click',async()=>{const url=await publicBriefingUrlForCurrentStore();if(url)window.open(url,'_blank','noopener');else toast('O briefing público ainda não está disponível.','info');}));
+ $('#storeNotifyBtn')?.addEventListener('click',()=>{const unread=notifications.filter(n=>!n.read).length;if(unread){notifications=notifications.map(n=>({...n,read:true}));persist();renderNotifications();}toast(unread?`${unread} notificação(ões) no estúdio.`:'Nenhuma nova notificação.','info');});
+ 
  $('#saveProfileBtn').onclick=async()=>{const btn=$('#saveProfileBtn');btn.disabled=true;try{designer={...designer,name:$('#dName').value.trim()||'Designer',brand:$('#dBrand').value.trim(),whats:$('#dWhats').value.trim(),email:$('#dEmail').value.trim(),insta:$('#dInsta').value.trim(),portfolio:$('#dPortfolio').value.trim(),pixType:$('#dPixType')?.value||'CPF',pixKey:$('#dPixKey')?.value.trim()||'',pixName:$('#dPixName')?.value.trim()||'',area:$('#dArea').value.trim(),bio:$('#dBio').value.trim(),photo:designer.photo||'',banner:designer.banner||''};const file=$('#profileBanner')?.files?.[0];if(file){if(file.size>8*1024*1024)throw new Error('O banner deve ter no máximo 8 MB.');if(!supabaseClient)initSupabaseClient();if(!supabaseClient)throw new Error('Não foi possível conectar ao armazenamento.');showUploadProgress('Enviando banner…','Atualizando o banner do seu perfil.');const safe=(file.name||'banner').replace(/[^a-zA-Z0-9._-]/g,'_');const path=`profile/${getOwnerToken()}/${Date.now()}-${safe}`;const {error}=await supabaseClient.storage.from('briefing-files').upload(path,file,{upsert:false,contentType:file.type||'image/jpeg'});if(error)throw error;designer.banner=supabaseClient.storage.from('briefing-files').getPublicUrl(path).data.publicUrl;updateUploadProgress(100,'Banner atualizado com sucesso.');}persist();await saveRemoteProfile();await syncPublicProfileLink(getPublicToken());await Promise.all(orders.filter(o=>o.trackingToken).map(o=>broadcastTrackingUpdate(o.trackingToken,'profile')));renderIdentity();renderProfile();renderDashboard();if(file)hideUploadProgress(true);toast('Perfil atualizado e pronto para aparecer nos briefings.');}catch(err){hideUploadProgress(false);toast(err?.message||'Não foi possível salvar o perfil.','error');}finally{btn.disabled=false;}};$('#profilePhoto').onchange=async e=>{
   const f=e.target.files[0];if(!f)return;
   if(f.size>4*1024*1024){toast('Escolha uma foto de até 4 MB.','error');e.target.value='';return;}
@@ -1977,10 +2143,12 @@ function showPublicShell(mode='briefing'){
   $('#app')?.classList.add('hidden');
   document.body.classList.add('dark');
   if(mode==='tracking'){
-    $('#publicPage')?.classList.add('hidden');
+    $('#publicPage')?.classList.add('hidden');$('#storePage')?.classList.add('hidden');
     $('#trackingPage')?.classList.remove('hidden');
+  }else if(mode==='store'){
+    $('#publicPage')?.classList.add('hidden');$('#trackingPage')?.classList.add('hidden');$('#storePage')?.classList.remove('hidden');
   }else{
-    $('#trackingPage')?.classList.add('hidden');
+    $('#trackingPage')?.classList.add('hidden');$('#storePage')?.classList.add('hidden');
     $('#publicPage')?.classList.remove('hidden');
   }
 }
@@ -1988,6 +2156,7 @@ function publicRoute(){
   const h=String(location.hash||'');
   if(h.startsWith('#briefing='))return 'briefing';
   if(h.startsWith('#pedido='))return 'tracking';
+  if(h.startsWith('#loja='))return 'store';
   return '';
 }
 let publicUiReady=false;
@@ -2005,12 +2174,15 @@ async function renderPublicRoute(){
   if(route==='briefing'){
     if(trackingPublicRefreshTimer){clearInterval(trackingPublicRefreshTimer);trackingPublicRefreshTimer=null;}
     if(trackingRealtimeChannel){try{supabaseClient?.removeChannel(trackingRealtimeChannel);}catch(_e){} trackingRealtimeChannel=null;}
-    $('#publicFormView')?.classList.remove('hidden');
-    $('#publicSuccess')?.classList.add('hidden');
-    $('#trackingPage')?.classList.add('hidden');
+    $('#publicFormView')?.classList.remove('hidden');$('#publicSuccess')?.classList.add('hidden');$('#trackingPage')?.classList.add('hidden');$('#storePage')?.classList.add('hidden');
     await loadPublicProfile();
+  }else if(route==='store'){
+    if(trackingPublicRefreshTimer){clearInterval(trackingPublicRefreshTimer);trackingPublicRefreshTimer=null;}
+    if(trackingRealtimeChannel){try{supabaseClient?.removeChannel(trackingRealtimeChannel);}catch(_e){} trackingRealtimeChannel=null;}
+    $('#publicPage')?.classList.add('hidden');$('#trackingPage')?.classList.add('hidden');$('#storePage')?.classList.remove('hidden');
+    await loadStore();setupStoreReveal();setupStoreMotion();
   }else{
-    $('#publicPage')?.classList.add('hidden');
+    $('#publicPage')?.classList.add('hidden');$('#storePage')?.classList.add('hidden');
     $('#trackingPage')?.classList.remove('hidden');
     const token=(()=>{try{return decodeURIComponent(location.hash.slice('#pedido='.length));}catch{return ''}})();
     await loadPublicTracking();
