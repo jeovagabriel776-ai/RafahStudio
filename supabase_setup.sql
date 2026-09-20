@@ -816,9 +816,6 @@ $$;
 grant execute on function public.get_products_for_owner(text) to authenticated;
 
 
-
-alter table public.product_items add column if not exists download_url text not null default '';
-
 -- ==========================================================
 -- RAFAHSTUDIO — LOJA PÚBLICA
 -- Vitrine separada do briefing: token próprio, produtos publicados
@@ -854,11 +851,10 @@ end $$;
 grant execute on function public.set_product_published(text,bigint,boolean) to authenticated;
 
 drop function if exists public.get_products_for_public(text);
-drop function if exists public.get_products_for_store(text);
 create or replace function public.get_products_for_store(p_store_token text)
-returns table(id bigint,name text,category text,description text,price numeric,image_url text,download_url text,created_at timestamptz)
+returns table(id bigint,name text,category text,description text,price numeric,image_url text,created_at timestamptz)
 language sql security definer set search_path=public as $$
-  select p.id,p.name,p.category,p.description,p.price,p.image_url,p.download_url,p.created_at
+  select p.id,p.name,p.category,p.description,p.price,p.image_url,p.created_at
   from public.product_items p
   join public.store_links l on l.owner_secret=p.owner_secret
   where l.store_token=p_store_token and p.is_published=true
@@ -883,28 +879,40 @@ create index if not exists store_order_requests_owner_idx on public.store_order_
 
 create or replace function public.submit_store_order(p_store_token text,p_customer_name text,p_whatsapp text,p_email text,p_items jsonb,p_note text)
 returns bigint language plpgsql security definer set search_path=public as $$
-declare v_owner text;v_id bigint;v_total numeric(12,2);v_valid int;v_requested int;v_items jsonb;v_requested int;v_items jsonb;
+declare v_owner text;v_id bigint;v_total numeric(12,2);v_valid int;
 begin
   if nullif(trim(coalesce(p_customer_name,'')),'') is null then raise exception 'Informe seu nome.'; end if;
   select owner_secret into v_owner from public.store_links where store_token=p_store_token limit 1;
   if v_owner is null then raise exception 'Vitrine não encontrada.'; end if;
-  select count(*) into v_requested from jsonb_array_elements(coalesce(p_items,'[]'::jsonb));
-  select count(distinct p.id) into v_valid
+  select count(*) into v_valid
   from jsonb_array_elements(coalesce(p_items,'[]'::jsonb)) j
   join public.product_items p on p.id=(j->>'id')::bigint and p.owner_secret=v_owner and p.is_published=true;
-  if v_requested=0 or v_valid<>v_requested then raise exception 'Um ou mais produtos selecionados não estão mais disponíveis.'; end if;
+  if v_valid=0 then raise exception 'Os produtos selecionados não estão mais disponíveis.'; end if;
   select coalesce(sum(p.price*greatest(coalesce((j->>'qty')::int,1),1)),0) into v_total
   from jsonb_array_elements(coalesce(p_items,'[]'::jsonb)) j
   join public.product_items p on p.id=(j->>'id')::bigint and p.owner_secret=v_owner and p.is_published=true;
-  select coalesce(jsonb_agg(jsonb_build_object('id',p.id,'name',p.name,'category',p.category,'price',p.price,'image_url',p.image_url,'qty',greatest(coalesce((j->>'qty')::int,1),1)) order by p.id),'[]'::jsonb) into v_items
-  from jsonb_array_elements(coalesce(p_items,'[]'::jsonb)) j
-  join public.product_items p on p.id=(j->>'id')::bigint and p.owner_secret=v_owner and p.is_published=true;
   insert into public.store_order_requests(owner_secret,store_token,customer_name,whatsapp,email,items,total,note)
-  values(v_owner,p_store_token,trim(p_customer_name),coalesce(trim(p_whatsapp),''),coalesce(trim(p_email),''),v_items,v_total,coalesce(p_note,''))
+  values(v_owner,p_store_token,trim(p_customer_name),coalesce(trim(p_whatsapp),''),coalesce(trim(p_email),''),coalesce(p_items,'[]'::jsonb),v_total,coalesce(p_note,''))
   returning id into v_id;
   return v_id;
 end $$;
 grant execute on function public.submit_store_order(text,text,text,text,jsonb,text) to anon,authenticated;
+
+create or replace function public.submit_store_custom_request(p_store_token text,p_customer_name text,p_whatsapp text,p_project text,p_note text)
+returns bigint language plpgsql security definer set search_path=public as $$
+declare v_owner text; v_id bigint;
+begin
+  if nullif(trim(coalesce(p_customer_name,'')),'') is null then raise exception 'Informe seu nome.'; end if;
+  if nullif(trim(coalesce(p_whatsapp,'')),'') is null then raise exception 'Informe seu WhatsApp.'; end if;
+  if nullif(trim(coalesce(p_project,'')),'') is null then raise exception 'Informe o que você precisa.'; end if;
+  select owner_secret into v_owner from public.store_links where store_token=p_store_token limit 1;
+  if v_owner is null then raise exception 'Vitrine não encontrada.'; end if;
+  insert into public.store_order_requests(owner_secret,store_token,customer_name,whatsapp,email,items,total,note)
+  values(v_owner,p_store_token,trim(p_customer_name),trim(p_whatsapp),'',jsonb_build_array(jsonb_build_object('id',null,'qty',1,'name','Pedido personalizado','price',0)),0,concat('Projeto: ',trim(p_project),case when nullif(trim(coalesce(p_note,'')),'') is not null then E'\n\nDetalhes: '||trim(p_note) else '' end))
+  returning id into v_id;
+  return v_id;
+end $$;
+grant execute on function public.submit_store_custom_request(text,text,text,text,text) to anon,authenticated;
 
 create or replace function public.get_store_order_requests_for_owner(p_owner_secret text)
 returns table(id bigint,customer_name text,whatsapp text,email text,items jsonb,total numeric,note text,status text,created_at timestamptz)
@@ -913,87 +921,6 @@ language sql security definer set search_path=public as $$
   from public.store_order_requests where owner_secret=p_owner_secret order by created_at desc limit 50;
 $$;
 grant execute on function public.get_store_order_requests_for_owner(text) to authenticated;
-
-
-create table if not exists public.store_chat_conversations (
-  conversation_token text primary key,
-  store_token text not null references public.store_links(store_token) on delete cascade,
-  customer_name text not null,
-  whatsapp text not null,
-  created_at timestamptz not null default now(),
-  last_message_at timestamptz not null default now(),
-  last_sender text not null default 'customer'
-);
-create unique index if not exists store_chat_identity_idx on public.store_chat_conversations(store_token,whatsapp);
-create table if not exists public.store_chat_messages (
-  id bigint generated by default as identity primary key,
-  conversation_token text not null references public.store_chat_conversations(conversation_token) on delete cascade,
-  sender text not null check(sender in ('customer','studio')),
-  message text not null,
-  created_at timestamptz not null default now()
-);
-create index if not exists store_chat_messages_conv_idx on public.store_chat_messages(conversation_token,created_at);
-alter table public.store_chat_conversations enable row level security;
-alter table public.store_chat_messages enable row level security;
-
-create or replace function public.start_store_chat(p_store_token text,p_customer_name text,p_whatsapp text)
-returns text language plpgsql security definer set search_path=public as $$
-declare v_token text; v_phone text:=regexp_replace(coalesce(p_whatsapp,''),'\\D','','g');
-begin
-  if not exists(select 1 from public.store_links where store_token=p_store_token) then raise exception 'Vitrine não encontrada.'; end if;
-  if nullif(trim(coalesce(p_customer_name,'')),'') is null or length(v_phone)<8 then raise exception 'Informe seu nome e WhatsApp.'; end if;
-  select conversation_token into v_token from public.store_chat_conversations where store_token=p_store_token and whatsapp=v_phone limit 1;
-  if v_token is null then v_token:=md5(random()::text||clock_timestamp()::text)||md5(random()::text||clock_timestamp()::text); insert into public.store_chat_conversations(conversation_token,store_token,customer_name,whatsapp) values(v_token,p_store_token,trim(p_customer_name),v_phone); end if;
-  update public.store_chat_conversations set customer_name=trim(p_customer_name),last_message_at=now() where conversation_token=v_token;
-  return v_token;
-end $$;
-grant execute on function public.start_store_chat(text,text,text) to anon,authenticated;
-
-create or replace function public.check_store_chat_conversation(p_store_token text,p_conversation_token text)
-returns boolean language sql security definer set search_path=public as $$
-  select exists(select 1 from public.store_chat_conversations where store_token=p_store_token and conversation_token=p_conversation_token);
-$$;
-grant execute on function public.check_store_chat_conversation(text,text) to anon,authenticated;
-
-create or replace function public.get_store_chat_messages(p_store_token text,p_conversation_token text)
-returns table(id bigint,sender text,message text,created_at timestamptz)
-language sql security definer set search_path=public as $$
-  select m.id,m.sender,m.message,m.created_at
-  from public.store_chat_messages m join public.store_chat_conversations c on c.conversation_token=m.conversation_token
-  where c.store_token=p_store_token and c.conversation_token=p_conversation_token order by m.created_at asc limit 200;
-$$;
-grant execute on function public.get_store_chat_messages(text,text) to anon,authenticated;
-
-create or replace function public.send_store_chat_message(p_store_token text,p_conversation_token text,p_message text)
-returns bigint language plpgsql security definer set search_path=public as $$
-declare v_id bigint;
-begin
-  if nullif(trim(coalesce(p_message,'')),'') is null then raise exception 'Digite uma mensagem.'; end if;
-  if not exists(select 1 from public.store_chat_conversations where store_token=p_store_token and conversation_token=p_conversation_token) then raise exception 'Conversa não encontrada.'; end if;
-  insert into public.store_chat_messages(conversation_token,sender,message) values(p_conversation_token,'customer',trim(p_message)) returning id into v_id;
-  update public.store_chat_conversations set last_message_at=now(),last_sender='customer' where conversation_token=p_conversation_token;
-  return v_id;
-end $$;
-grant execute on function public.send_store_chat_message(text,text,text) to anon,authenticated;
-
-create or replace function public.get_store_chat_conversations_for_owner(p_store_token text)
-returns table(conversation_token text,customer_name text,whatsapp text,last_message_at timestamptz,last_sender text)
-language sql security definer set search_path=public as $$
-  select conversation_token,customer_name,whatsapp,last_message_at,last_sender from public.store_chat_conversations where store_token=p_store_token order by last_message_at desc limit 100;
-$$;
-grant execute on function public.get_store_chat_conversations_for_owner(text) to anon,authenticated;
-
-create or replace function public.send_store_chat_reply(p_store_token text,p_conversation_token text,p_message text)
-returns bigint language plpgsql security definer set search_path=public as $$
-declare v_id bigint;
-begin
-  if nullif(trim(coalesce(p_message,'')),'') is null then raise exception 'Digite uma mensagem.'; end if;
-  if not exists(select 1 from public.store_chat_conversations where store_token=p_store_token and conversation_token=p_conversation_token) then raise exception 'Conversa não encontrada.'; end if;
-  insert into public.store_chat_messages(conversation_token,sender,message) values(p_conversation_token,'studio',trim(p_message)) returning id into v_id;
-  update public.store_chat_conversations set last_message_at=now(),last_sender='studio' where conversation_token=p_conversation_token;
-  return v_id;
-end $$;
-grant execute on function public.send_store_chat_reply(text,text,text) to authenticated;
 
 create or replace function public.get_public_profile_for_store(p_store_token text)
 returns table(name text,whatsapp text,instagram text,portfolio text,email text,banner text,photo text)

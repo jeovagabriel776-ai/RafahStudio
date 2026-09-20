@@ -89,65 +89,88 @@
   </section>
 
   <section id="storePage" class="store-public hidden" aria-label="Loja pública RafahStudio">
-    <div class="store-shell">
-      <header class="store-header">
-        <a class="store-brand" href="#" data-store-home aria-label="RafahStudio"><img src="assets/logo.svg" alt="RafahStudio"></a>
-        <nav class="store-nav"><a href="#store-catalog" data-store-scroll>Loja</a><a href="#store-categories" data-store-scroll>Categorias</a><a href="#store-order" data-store-scroll>Personalizado</a></nav>
-        <div class="store-head-actions">
-          <label class="store-search"><span>⌕</span><input id="storeSearch" type="search" placeholder="Buscar estampas, cartazes e artes..." autocomplete="off"></label>
-          <button class="store-icon-btn store-bell" id="storeNotifyBtn" type="button" aria-label="Avisos"><img src="assets/icons/notification2.svg" alt=""></button>
-          <button class="store-icon-btn store-chat-head-btn" id="storeChatBtn" type="button" aria-label="Conversar com o estúdio"><img src="assets/icons/chat.svg" alt=""></button>
-          <button class="store-icon-btn" id="storeCartBtn" type="button" aria-label="Meu pedido"><span class="store-cart-icon">＋</span><em id="storeCartCount">0</em></button>
+  <div class="store-shell">
+    <div class="store-announcement"><div>✦ <b>RafahStudio</b> • artes digitais, estampas e serviços criativos</div><div class="store-announcement-links"><span>Atendimento personalizado</span><span>Pedido sem cadastro</span></div></div>
+    <header class="store-header">
+      <a class="store-brand" href="#store-home" data-store-scroll aria-label="RafahStudio"><img src="assets/logo.svg" alt="RafahStudio"></a>
+      <nav class="store-nav" aria-label="Loja">
+        <a href="#store-home" data-store-scroll>Início</a>
+        <a href="#store-catalog" data-store-scroll>Produtos</a>
+        <a href="#store-services" data-store-scroll>Serviços</a>
+        <a href="#store-order" data-store-scroll>Pedido personalizado</a>
+      </nav>
+      <div class="store-head-actions">
+        <label class="store-search"><span aria-hidden="true">⌕</span><input id="storeSearch" type="search" placeholder="Buscar estampas, cartazes, PSD..." autocomplete="off"></label>
+        <button class="store-icon-btn" id="storeChatBtn" type="button" aria-label="Falar com o RafahStudio"><img src="assets/icons/chat.svg" alt=""></button>
+        <button class="store-icon-btn" id="storeCartBtn" type="button" aria-label="Meu pedido"><img src="assets/icons/orders.svg" alt=""><em id="storeCartCount">0</em></button>
+      </div>
+    </header>
+
+    <main class="store-main" id="store-home">
+      <section class="store-hero store-section-frame" data-parallax="0.04">
+        <div class="store-hero-bg-shape shape-a" aria-hidden="true"></div><div class="store-hero-bg-shape shape-b" aria-hidden="true"></div>
+        <div class="store-hero-copy" data-reveal>
+          <span class="store-kicker">RAFAHSTUDIO • LOJA CRIATIVA</span>
+          <h1>Artes prontas para você <em>usar, editar e destacar.</em></h1>
+          <p>Escolha estampas, cartazes em PSD, artes digitais e outros materiais. Quando precisar de algo exclusivo, faça seu pedido direto pelo estúdio.</p>
+          <div class="store-hero-actions"><button class="store-primary" id="storeHeroShopBtn" data-magnetic>Ver produtos <span>→</span></button><button class="store-ghost" id="storeHeroOrderBtn" data-magnetic>Quero uma arte exclusiva</button></div>
+          <div class="store-mini-benefits"><span>✓ Sem cadastro</span><span>✓ Pedido simples</span><span>✓ Atendimento direto</span></div>
         </div>
-      </header>
-      <main class="store-main">
-        <section class="store-hero store-hero-retail" data-parallax="0.04">
-          <div class="store-grid-bg"></div><div class="store-orb orb-one" data-parallax="0.12"></div><div class="store-orb orb-two" data-parallax="-0.08"></div>
-          <div class="store-hero-copy" data-reveal>
-            <span class="store-kicker">RAFAHSTUDIO • LOJA CRIATIVA</span>
-            <h1>Artes prontas.<br><em>Feitas para vender.</em></h1>
-            <p>Estampas, cartazes editáveis em PSD, artes digitais e outros recursos para você agilizar seu projeto.</p>
-            <div class="store-hero-actions"><button class="store-primary" id="storeHeroShopBtn" data-magnetic>Ver produtos <span>→</span></button><button class="store-ghost" id="storeHeroOrderBtn" data-magnetic>Quero uma arte personalizada</button></div>
-            <div class="store-trust"><span>✓ Compra sem cadastro</span><span>✓ Pedido pelo site ou WhatsApp</span><span>✓ Atendimento direto</span></div>
-          </div>
-          <div class="store-hero-showcase" data-reveal><div class="store-showcase-frame"><div class="store-showcase-top"><span></span><span></span><span></span><b>RAFAHSTUDIO</b></div><div class="store-showcase-stack"><div class="store-showcase-card sc-back">PSD EDITÁVEL</div><div class="store-showcase-card sc-mid">ESTAMPAS</div><div class="store-showcase-card sc-front"><small>DESTAQUE</small><strong>ARTES<br>PRONTAS</strong><span>Escolha • adicione • solicite</span></div></div></div></div>
-        </section>
-        <section id="store-categories" class="store-shop-categories" data-reveal>
-          <div class="store-section-head store-compact-head"><div><span class="store-kicker">COMPRE POR CATEGORIA</span><h2>Escolha o que você precisa</h2></div></div>
-          <div class="store-category-cards">
-            <button class="store-category-card active" data-store-category="all"><span>✦</span><div><b>Todos</b><small>Ver a loja completa</small></div><i>→</i></button>
-            <button class="store-category-card" data-store-category="Estampas"><span>▧</span><div><b>Estampas</b><small>Artes para aplicação</small></div><i>→</i></button>
-            <button class="store-category-card" data-store-category="Cartazes editáveis"><span>▤</span><div><b>Cartazes editáveis</b><small>Arquivos PSD</small></div><i>→</i></button>
-            <button class="store-category-card" data-store-category="Templates"><span>◫</span><div><b>Templates</b><small>Prontos para adaptar</small></div><i>→</i></button>
-            <button class="store-category-card" data-store-category="Recursos"><span>◈</span><div><b>Recursos</b><small>Materiais para criação</small></div><i>→</i></button>
-            <button class="store-category-card" data-store-category="Serviços"><span>✦</span><div><b>Serviços</b><small>Crie algo exclusivo</small></div><i>→</i></button>
-          </div>
-        </section>
-        <section id="store-catalog" class="store-catalog-section store-retail-catalog">
-          <div class="store-section-head" data-reveal><div><span class="store-kicker">MAIS RECENTES</span><h2>Novidades na loja</h2><p>Escolha uma arte, veja os detalhes e monte seu pedido.</p></div><span id="storeResultCount">0 itens</span></div>
-          <div id="storeSkeletons" class="store-product-grid"><span class="store-skeleton"></span><span class="store-skeleton"></span><span class="store-skeleton"></span><span class="store-skeleton"></span></div>
-          <div id="storeProductGrid" class="store-product-grid hidden"></div><div id="storeEmpty" class="store-empty hidden"><b>✦</b><h3>Nenhum produto encontrado</h3><p>Tente outra categoria ou palavra-chave.</p></div>
-        </section>
-        <section class="store-feature-grid store-retail-features" data-reveal>
-          <article class="store-feature-card feature-main"><div><span>PRODUTOS PRONTOS</span><h2>Arquivos para editar e produzir.</h2><p>Cartazes em PSD, estampas e outros arquivos criativos com valor definido.</p><button class="store-inline" id="storeFeatureOrderBtn">Explorar catálogo →</button></div><b>↗</b></article>
-          <article class="store-feature-card"><div><span>PRECISA DE ALGO EXCLUSIVO?</span><h2>Peça uma arte sob medida.</h2><p>Você explica a ideia e o RafahStudio cuida do restante.</p><button class="store-inline" id="storeFeatureChatBtn">Falar com o estúdio →</button></div><b>✦</b></article>
-        </section>
-        <section id="store-order" class="store-order-banner" data-reveal><div><span class="store-kicker">PROJETO PERSONALIZADO</span><h2>Não encontrou o que precisava?</h2><p>Faça seu pedido sem criar cadastro. Informe seu nome e WhatsApp e continue direto com o estúdio.</p></div><button class="store-primary" id="storeBannerOrderBtn" data-magnetic>Fazer pedido <span>→</span></button></section>
-        <footer class="store-footer"><div class="store-footer-brand"><img src="assets/logo.svg" alt="RafahStudio"><span>RafahStudio</span></div><div id="storeSocialDock"></div><small>Os valores e condições são confirmados pelo estúdio antes da produção. Produtos digitais e arquivos editáveis são entregues conforme a modalidade adquirida.</small></footer>
-      </main>
-    </div>
-    <aside id="storeCartDrawer" class="store-cart-drawer" aria-hidden="true">
-      <div class="store-cart-head"><div><span class="store-kicker">SELEÇÃO</span><h2>Meu pedido</h2></div><button class="store-close" id="storeCartClose" type="button">×</button></div>
-      <div id="storeCartItems" class="store-cart-items"></div>
-      <div class="store-cart-footer"><div><span>Total estimado</span><strong id="storeCartTotal">R$ 0,00</strong></div><small>Sem cadastro: basta informar seus dados no próximo passo.</small><button class="store-primary wide" id="storeCheckoutBtn" type="button">Continuar pedido <span>→</span></button><button class="store-ghost wide" id="storeWhatsBtn" type="button">Falar pelo WhatsApp</button></div>
-    </aside><div id="storeCartBackdrop" class="store-cart-backdrop hidden"></div>
-    <aside id="storeChatDrawer" class="store-chat-drawer" aria-hidden="true">
-      <div class="store-chat-head"><div><span class="store-kicker">ATENDIMENTO</span><h2>Fale com o RafahStudio</h2><small id="storeChatIdentity">Informe seus dados para continuar.</small></div><button class="store-close" id="storeChatClose" type="button">×</button></div>
-      <div id="storeChatMessages" class="store-chat-messages"></div>
-      <div id="storeChatGate" class="store-chat-gate"><div class="store-chat-gate-icon">⌁</div><h3>Antes de conversar</h3><p>Informe seu nome e WhatsApp. Se você já conversou com o estúdio, o histórico pode continuar aqui.</p><form id="storeChatIdentityForm"><label>Seu nome<input id="storeChatName" required></label><label>WhatsApp<input id="storeChatWhats" inputmode="tel" required></label><button class="store-primary wide" type="submit">Continuar conversa →</button></form></div>
-      <form id="storeChatForm" class="store-chat-form hidden"><textarea id="storeChatText" rows="2" placeholder="Escreva sua mensagem..."></textarea><button class="store-primary" type="submit">Enviar <span>→</span></button></form>
-    </aside><div id="storeChatBackdrop" class="store-chat-backdrop hidden"></div>
-  </section>
+        <div id="storeHeroVisual" class="store-hero-visual" data-reveal aria-label="Produtos em destaque"></div>
+      </section>
+
+      <section class="store-feature-row" data-reveal>
+        <article><span class="store-feature-icon">✦</span><div><b>Produtos digitais</b><small>Estampas e cartazes prontos para editar.</small></div></article>
+        <article><span class="store-feature-icon">◈</span><div><b>Serviços personalizados</b><small>Logo, identidade visual e artes sob medida.</small></div></article>
+        <article><span class="store-feature-icon">↗</span><div><b>Atendimento direto</b><small>Fale com o designer pelo WhatsApp quando precisar.</small></div></article>
+      </section>
+
+      <section class="store-category-area" id="store-services" data-reveal>
+        <div class="store-section-head"><div><span class="store-kicker">CATEGORIAS</span><h2>Encontre o que procura</h2></div><span class="store-result-info">Escolha uma categoria</span></div>
+        <div class="store-category-cards">
+          <button class="store-category-card active" data-store-category="all"><span>✦</span><b>Todos</b><small>Ver tudo</small></button>
+          <button class="store-category-card" data-store-category="Estampa"><span>▦</span><b>Estampas</b><small>Artes para camisetas</small></button>
+          <button class="store-category-card" data-store-category="Cartaz PSD"><span>▤</span><b>Cartazes PSD</b><small>Prontos para editar</small></button>
+          <button class="store-category-card" data-store-category="Arte digital"><span>◫</span><b>Artes digitais</b><small>Materiais prontos</small></button>
+          <button class="store-category-card" data-store-category="Serviço personalizado"><span>✚</span><b>Serviços</b><small>Feitos para você</small></button>
+          <button class="store-category-card" data-store-category="Outro"><span>⋯</span><b>Outros</b><small>Mais opções</small></button>
+        </div>
+      </section>
+
+      <section class="store-featured-section" data-reveal>
+        <div class="store-section-head"><div><span class="store-kicker">DESTAQUES</span><h2>O que pode entrar no seu pedido</h2><p>Escolha uma arte pronta ou combine itens para montar sua solicitação.</p></div><button class="store-section-link" id="storeViewAllBtn" type="button">Ver todos →</button></div>
+        <div id="storeFeaturedGrid" class="store-featured-grid"></div>
+      </section>
+
+      <section class="store-catalog-section" id="store-catalog">
+        <div class="store-section-head" data-reveal><div><span class="store-kicker">PRODUTOS</span><h2>Mais recentes</h2><p>Materiais publicados pelo RafahStudio.</p></div><span id="storeResultCount" class="store-result-info">0 itens</span></div>
+        <div id="storeSkeletons" class="store-product-grid"><span class="store-skeleton"></span><span class="store-skeleton"></span><span class="store-skeleton"></span><span class="store-skeleton"></span></div>
+        <div id="storeProductGrid" class="store-product-grid hidden"></div>
+        <div id="storeEmpty" class="store-empty hidden"><b>✦</b><h3>Nenhum produto encontrado</h3><p>Escolha outra categoria ou fale com o estúdio para criar algo personalizado.</p><button class="store-primary" id="storeEmptyOrderBtn">Fazer pedido personalizado</button></div>
+      </section>
+
+      <section class="store-spotlight" data-reveal>
+        <div><span class="store-kicker">PARA QUEM QUER ALGO ÚNICO</span><h2>Seu projeto não precisa caber em um catálogo.</h2><p>Envie sua ideia, prazo, referência e o que precisa. Você não precisa criar conta para começar.</p><button class="store-primary" id="storeFeatureOrderBtn" data-magnetic>Solicitar projeto <span>→</span></button></div>
+        <div class="store-spotlight-art"><div class="spotlight-glow"></div><img src="assets/logo2.svg" alt="RafahStudio"></div>
+      </section>
+
+      <section id="store-order" class="store-custom-order" data-reveal>
+        <div class="store-custom-copy"><span class="store-kicker">PEDIDO PERSONALIZADO</span><h2>Tem uma ideia? Vamos criar.</h2><p>Faça seu pedido aqui mesmo. Sem login e sem cadastro. Você recebe a confirmação no contato informado.</p><button class="store-inline" id="storeBannerOrderBtn">Começar pedido →</button></div>
+        <div class="store-custom-points"><div><b>01</b><span>Você explica o que precisa</span></div><div><b>02</b><span>O estúdio avalia e confirma</span></div><div><b>03</b><span>O projeto segue pelo acompanhamento</span></div></div>
+      </section>
+
+      <footer class="store-footer"><div class="store-footer-brand"><img src="assets/logo.svg" alt="RafahStudio"></div><div id="storeSocialDock"></div><small>RafahStudio • artes digitais, materiais editáveis e serviços de design.</small></footer>
+    </main>
+  </div>
+
+  <aside id="storeCartDrawer" class="store-cart-drawer" aria-hidden="true">
+    <div class="store-cart-head"><div><span class="store-kicker">SELEÇÃO</span><h2>Meu pedido</h2><small>Você ainda não precisa criar uma conta.</small></div><button class="store-close" id="storeCartClose" type="button">×</button></div>
+    <div id="storeCartItems" class="store-cart-items"></div>
+    <div class="store-cart-footer"><div><span>Total estimado</span><strong id="storeCartTotal">R$ 0,00</strong></div><small>O valor pode ser confirmado pelo estúdio antes da produção ou entrega.</small><button class="store-primary wide" id="storeCheckoutBtn" type="button">Continuar pedido <span>→</span></button><button class="store-ghost wide" id="storeWhatsBtn" type="button">Falar pelo WhatsApp</button></div>
+  </aside><div id="storeCartBackdrop" class="store-cart-backdrop hidden"></div>
+
+  <button id="storeFloatingChat" class="store-floating-chat" type="button" aria-label="Falar com o RafahStudio"><img src="assets/icons/chat.svg" alt=""><span>Falar com o designer</span></button>
+</section>
 
   <div id="app" class="app hidden">
     <aside class="sidebar" id="sidebar">
@@ -166,7 +189,8 @@
         <button class="nav-item" data-page="clientes" title="Clientes" aria-label="Clientes"><span class="nav-icon"><img src="assets/icons/clients.svg" alt=""></span><span>Clientes</span></button>
         <button class="nav-item" data-page="conversas" title="Conversas" aria-label="Conversas"><span class="nav-icon"><img src="assets/icons/chat.svg" alt=""></span><span>Conversas</span><em id="navConversations">0</em></button>
         <button class="nav-item" data-page="catalogo" title="Catálogo" aria-label="Catálogo"><span class="nav-icon"><img src="assets/icons/catalog.svg" alt=""></span><span>Catálogo</span></button>
-        <button class="nav-item" data-page="produtos" title="Produtos" aria-label="Produtos"><span class="nav-icon"><img src="assets/icons/products.svg" alt=""></span><span>Produtos</span></button>\n        <button class="nav-item" data-page="loja" title="Loja" aria-label="Loja"><span class="nav-icon"><img src="assets/icons/store.svg" alt=""></span><span>Loja</span><em id="navStoreRequests">0</em></button>
+        <button class="nav-item" data-page="produtos" title="Produtos" aria-label="Produtos"><span class="nav-icon"><img src="assets/icons/products.svg" alt=""></span><span>Produtos</span></button>
+        <button class="nav-item" data-page="loja" title="Loja" aria-label="Loja"><span class="nav-icon"><img src="assets/icons/store.svg" alt=""></span><span>Loja</span><em id="navStoreRequests">0</em></button>
         <button class="nav-item" data-page="orcamentos" title="Orçamentos" aria-label="Orçamentos"><span class="nav-icon"><img src="assets/icons/quotes.svg" alt=""></span><span>Orçamentos</span></button>
         <button class="nav-item" data-page="financeiro" title="Financeiro" aria-label="Financeiro"><span class="nav-icon"><img src="assets/icons/finance.svg" alt=""></span><span>Financeiro</span></button>
       </nav>
@@ -202,7 +226,8 @@
         <button class="mobile-nav-item" data-page="pedidos" title="Pedidos" aria-label="Pedidos"><span><img src="assets/icons/orders.svg" alt=""></span><em id="mobileNavOrders">0</em></button>
         <button class="mobile-nav-item" data-page="conversas" title="Conversas" aria-label="Conversas"><span><img src="assets/icons/chat.svg" alt=""></span><em id="mobileNavConversations">0</em></button>
         <button class="mobile-nav-item" data-page="clientes" title="Clientes" aria-label="Clientes"><span><img src="assets/icons/clients.svg" alt=""></span></button>
-        <button class="mobile-nav-item" data-page="produtos" title="Produtos" aria-label="Produtos"><span><img src="assets/icons/products.svg" alt=""></span></button>\n        <button class="mobile-nav-item" data-page="loja" title="Loja" aria-label="Loja"><span><img src="assets/icons/store.svg" alt=""></span><em id="mobileNavStoreRequests">0</em></button>
+        <button class="mobile-nav-item" data-page="produtos" title="Produtos" aria-label="Produtos"><span><img src="assets/icons/products.svg" alt=""></span></button>
+        <button class="mobile-nav-item" data-page="loja" title="Loja" aria-label="Loja"><span><img src="assets/icons/store.svg" alt=""></span><em id="mobileNavStoreRequests">0</em></button>
         <button class="mobile-nav-item more" id="mobileMoreBtn" type="button" title="Mais" aria-label="Mais"><span>•••</span></button>
       </nav>
 
@@ -247,7 +272,7 @@
         <div class="page-head"><div><span class="eyebrow">VITRINE PÚBLICA</span><h1>Loja</h1><p>Publique seus produtos e compartilhe sua vitrine com clientes.</p></div><div class="page-head-actions"><button class="btn secondary" id="copyStoreLinkBtn">↗ Copiar link</button><button class="btn primary" id="openStorePreviewBtn">Abrir loja →</button></div></div>
         <div class="store-admin-hero card"><div><span class="eyebrow">SUA LOJA</span><h2>Uma vitrine para seus produtos</h2><p id="storeLinkText">Gere seu link público para compartilhar.</p><div class="store-admin-actions"><button class="btn secondary small" id="generateStoreLinkBtn">Gerar link</button><button class="btn secondary small" id="copyStoreLinkBtn2">Copiar</button></div></div><div class="store-admin-stats"><div><small>Publicados</small><strong id="storePublishedCount">0</strong></div><div><small>Produtos</small><strong id="storeAllCount">0</strong></div><div><small>Solicitações</small><strong id="storeRequestCount">0</strong></div></div></div>
         <div class="card store-admin-products"><div class="card-title"><div><b>Produtos da loja</b><small>Escolha o que ficará visível na vitrine.</small></div><button class="btn primary small" data-action="new-product">+ Cadastrar produto</button></div><div id="storeAdminProductList"></div></div>
-        <div class="card store-request-card"><div class="card-title"><div><b>Solicitações recebidas</b><small>Pedidos iniciados pela loja pública.</small></div></div><div id="storeRequestsList"></div></div><div class="card store-request-card"><div class="card-title"><div><b>Conversas da loja</b><small>Clientes que falaram com você pela vitrine.</small></div></div><div id="storeChatAdminList"></div></div>
+        <div class="card store-request-card"><div class="card-title"><div><b>Solicitações recebidas</b><small>Pedidos iniciados pela loja pública.</small></div></div><div id="storeRequestsList"></div></div>
       </section>
       <section id="financeiro" class="page"><div class="page-head"><div><span class="eyebrow">FINANCEIRO</span><h1>Financeiro</h1><p>Veja o que entrou, o que está pendente e filtre por período.</p></div></div><div class="filter-card"><label>Data inicial<input type="date" id="finStart"></label><label>Data final<input type="date" id="finEnd"></label><label>Status<select id="finStatus"><option value="all">Todos</option><option value="paid">Pagos</option><option value="pending">Pendentes</option></select></label><button class="btn secondary" id="clearFinance">Limpar</button></div><div class="finance-metrics"><div class="finance-total"><small>Total filtrado</small><strong id="fTotal">R$ 0,00</strong></div><div><small>Recebido</small><strong id="fPaid">R$ 0,00</strong></div><div><small>Pendente</small><strong id="fPending">R$ 0,00</strong></div><div><small>Ticket médio</small><strong id="fAverage">R$ 0,00</strong></div></div><div class="table-card"><div class="table-head finance-head"><span>Projeto</span><span>Cliente</span><span>Data</span><span>Status</span><span>Valor</span><span></span></div><div id="financeTable"></div></div></section>
 
