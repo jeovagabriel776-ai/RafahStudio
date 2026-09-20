@@ -1012,7 +1012,7 @@ async function refreshProductsFromSupabase(){
 /* ==========================================================
    RAFAHSTUDIO STORE — public storefront
    ========================================================== */
-let storePublicTokenCache='', storeItems=[], storeCart=[], storeCategory='all', storeRequestPollTimer=null, storeLastRequestId=0;
+let storePublicTokenCache='', storeItems=[], storeCart=[], storeCategory='all', storeRequestPollTimer=null, storeLastRequestId=0, storePage='home', storeRegisteredContact=null;
 
 function storeTokenFromHash(){
   try{
@@ -1058,6 +1058,7 @@ function addStoreItem(item){
   renderStoreCart();openStoreCart(true);
 }
 function storeCategoryKey(value){return String(value||'').trim().toLowerCase();}
+function storeCategoryMatches(item,selected){const cat=storeCategoryKey(item?.category),want=storeCategoryKey(selected);if(want==='all')return true;if(want==='cartaz psd')return cat==='cartaz psd'||cat==='cartaz';if(want==='arte digital')return cat==='arte digital'||cat==='template'||cat==='pacote de artes';if(want==='serviço personalizado')return cat==='serviço personalizado'||cat==='logo'||cat==='identidade visual'||cat==='post para instagram'||cat==='social media';return cat===want;}
 function storeIsDigital(item){const c=storeCategoryKey(item?.category);return ['estampa','estampas','cartaz psd','psd','arte digital','template','pacote de artes','arquivo digital'].some(x=>c===x||c.includes(x));}
 function storeActionLabel(item){return storeIsDigital(item)?'Adicionar ao pedido':'Solicitar serviço';}
 function storeActionMeta(item){return storeIsDigital(item)?'Produto digital':'Serviço personalizado';}
@@ -1081,7 +1082,7 @@ function openStoreProduct(item){if(!item)return;modal(`<div class="modal-head"><
 function renderStoreProducts(){
   const grid=$('#storeProductGrid'),empty=$('#storeEmpty'),sk=$('#storeSkeletons');if(!grid)return;
   const q=($('#storeSearch')?.value||'').trim().toLowerCase(), cat=storeCategoryKey(storeCategory);
-  const list=storeItems.filter(x=>(cat==='all'||storeCategoryKey(x.category)===cat)&&(`${x.name||''} ${x.category||''} ${x.description||''}`).toLowerCase().includes(q));
+  const list=storeItems.filter(x=>storeCategoryMatches(x,storeCategory)&&(`${x.name||''} ${x.category||''} ${x.description||''}`).toLowerCase().includes(q));
   if($('#storeResultCount'))$('#storeResultCount').textContent=`${list.length} ${list.length===1?'item':'itens'}`;
   grid.innerHTML=list.map(x=>`<article class="store-product-card" data-store-product="${x.id}" data-reveal><button class="store-product-media" data-store-view="${x.id}" type="button" aria-label="Ver ${esc(x.name)}"><div class="store-product-cover">${x.image_url?`<img src="${esc(x.image_url)}" alt="${esc(x.name)}" loading="lazy">`:`<span class="store-no-image">✦</span>`}</div><span class="store-product-badge">${esc(storeActionMeta(x))}</span></button><div class="store-product-body"><div class="store-product-top"><span class="store-product-cat">${esc(x.category||'Serviço')}</span><button class="store-product-view" data-store-view="${x.id}" type="button">Ver detalhes</button></div><h3>${esc(x.name)}</h3><p>${esc(x.description||'Material criativo RafahStudio.')}</p><div class="store-product-bottom"><div><small>Valor de referência</small><strong class="store-product-price">${storeMoney(x.price)}</strong></div><button class="store-add" type="button" data-store-add="${x.id}" data-magnetic>${storeActionLabel(x)} <span>→</span></button></div></div></article>`).join('');
   sk?.classList.add('hidden');grid.classList.remove('hidden');empty?.classList.toggle('hidden',!!list.length);setupStoreReveal();
@@ -1099,6 +1100,7 @@ async function loadStore(){
   }catch(e){console.warn('[RafahStudio] Loja pública:',e);storeItems=[];renderStoreHeroVisual();renderStoreFeatured();renderStoreProducts();toast(e?.message||'Não foi possível carregar a loja.','error');}
 }
 function openStoreCustomOrder(){
+  if(!requireStoreRegistration('order'))return;
   const saved=getStoreContact();
   modal(`<div class="modal-head"><div><span class="eyebrow">PEDIDO PERSONALIZADO</span><h2>Vamos criar sua arte.</h2><p class="muted">Sem cadastro. Informe seus dados uma única vez para continuar pelo mesmo atendimento.</p></div><button class="close-modal" data-close-modal>×</button></div><form id="storeCustomOrderForm" class="store-public-form"><div class="two-col"><label>Seu nome<input id="storeCustomName" required value="${esc(saved.name)}"></label><label>WhatsApp<input id="storeCustomWhats" inputmode="tel" required value="${esc(saved.whats)}"></label></div><label>O que você precisa?<input id="storeCustomProject" required placeholder="Ex.: estampa, cartaz, identidade visual..."></label><label>Detalhes<textarea id="storeCustomNote" rows="5" placeholder="Prazo, tamanho, texto, referências e qualquer detalhe importante."></textarea></label><div class="modal-actions"><button type="button" class="btn secondary" data-close-modal>Cancelar</button><button class="btn primary" type="submit">Enviar pedido →</button></div></form>`);
   $('#storeCustomOrderForm').onsubmit=async e=>{
@@ -1116,18 +1118,65 @@ async function openStoreChat(){
 async function launchStoreChat(name,whats){
   try{const token=storePublicTokenCache||storeTokenFromHash();const {data}=await supabaseClient.rpc('get_public_profile_for_store',{p_store_token:token});const p=Array.isArray(data)?(data[0]||{}):(data||{});const n=String(p?.whatsapp||'').replace(/\D/g,'');if(!n){toast('O WhatsApp do estúdio ainda não está configurado.','info');return;}const digits=String(whats||'').replace(/\D/g,'');const message=`Olá! Sou ${name}. Meu WhatsApp é ${digits}. Vim pela loja do RafahStudio e gostaria de conversar sobre um pedido.`;window.open(`https://wa.me/${n.startsWith('55')?n:'55'+n}?text=${encodeURIComponent(message)}`,'_blank','noopener');}catch(e){toast('Não foi possível iniciar a conversa.','error');}
 }
+function setStorePage(page='home'){
+  storePage=page;
+  $$('#storePage .store-view-page').forEach(el=>el.classList.toggle('store-view-active',el.dataset.storeView===page));
+  $$('#storePage [data-store-page]').forEach(a=>a.classList.toggle('active',a.dataset.storePage===page));
+  const search=$('#storeSearch');if(search)search.style.display=page==='products'?'':'none';
+  const title=page==='products'?'Produtos':page==='services'?'Serviços':page==='order'?'Pedido personalizado':page==='register'?'Cadastro':'Início';
+  $('#storePage')?.classList.toggle('store-products-active',page==='products');
+  document.title=`RafahStudio • ${title}`;
+  if(page==='products')renderStoreProducts();
+  if(page==='register')renderStoreRegistration();
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+function renderStoreRegistration(){
+  const c=storeRegisteredContact||getStoreRegisteredContact()||getStoreContact();
+  if($('#storeRegisterName'))$('#storeRegisterName').value=c?.name||'';
+  if($('#storeRegisterWhats'))$('#storeRegisterWhats').value=c?.whats||'';
+  if($('#storeRegisterEmail'))$('#storeRegisterEmail').value=c?.email||'';
+  const st=$('#storeRegisterStatus');if(st&&c?.whats)st.textContent='Cadastro encontrado neste dispositivo. Você pode atualizar seus dados.';
+}
+async function registerStoreCustomer(e){
+  e.preventDefault();const btn=e.submitter;btn.disabled=true;
+  try{
+    const name=$('#storeRegisterName').value.trim(),whats=$('#storeRegisterWhats').value.trim(),email=$('#storeRegisterEmail').value.trim();
+    if(!normalizeWhatsApp(whats))throw new Error('Informe um WhatsApp válido.');
+    const {data,error}=await supabaseClient.rpc('register_store_customer',{p_store_token:storePublicTokenCache||storeTokenFromHash(),p_customer_name:name,p_whatsapp:whats,p_email:email});
+    if(error)throw error;
+    saveStoreRegisteredContact({name,whats,email,customer_id:data});
+    const st=$('#storeRegisterStatus');if(st)st.textContent='Cadastro salvo. Se você já tinha esse WhatsApp, o cadastro foi atualizado sem criar outro cliente.';
+    toast('Cadastro salvo com sucesso.','success');
+  }catch(err){toast(err?.message||'Não foi possível salvar seu cadastro.','error');}finally{btn.disabled=false;}
+}
+function requireStoreRegistration(next='order'){
+  const c=storeRegisteredContact||getStoreRegisteredContact();
+  if(!c?.customer_id){setStorePage('register');toast('Faça seu cadastro antes de enviar um pedido.','info');return false;}
+  return true;
+}
 function setupStorePublic(){
   if(window.__rafahStorePublicBound)return;window.__rafahStorePublicBound=true;
   $('#storeCartClose')?.addEventListener('click',()=>openStoreCart(false));$('#storeCartBackdrop')?.addEventListener('click',()=>openStoreCart(false));$('#storeCartBtn')?.addEventListener('click',()=>openStoreCart(true));$('#storeCheckoutBtn')?.addEventListener('click',openStoreCheckout);$('#storeWhatsBtn')?.addEventListener('click',openStoreChat);$('#storeChatBtn')?.addEventListener('click',openStoreChat);$('#storeFloatingChat')?.addEventListener('click',openStoreChat);
   $('#storeProductGrid')?.addEventListener('click',e=>{const add=e.target.closest('[data-store-add]');if(add){e.stopPropagation();const item=storeItems.find(x=>String(x.id)===String(add.dataset.storeAdd));if(item){if(storeIsDigital(item)||item.category){addStoreItem(item);}return;}}const view=e.target.closest('[data-store-view]');if(view){const item=storeItems.find(x=>String(x.id)===String(view.dataset.storeView));if(item)openStoreProduct(item);}});
   $('#storeHeroVisual')?.addEventListener('click',e=>{const b=e.target.closest('[data-store-view]');if(!b)return;const item=storeItems.find(x=>String(x.id)===String(b.dataset.storeView));if(item)openStoreProduct(item);});$('#storeFeaturedGrid')?.addEventListener('click',e=>{const b=e.target.closest('[data-store-add]');if(!b)return;const item=storeItems.find(x=>String(x.id)===String(b.dataset.storeAdd));if(item)addStoreItem(item);});
   $('#storeCartItems')?.addEventListener('click',e=>{const b=e.target.closest('[data-store-qty]');if(!b)return;const item=storeCart.find(x=>String(x.id)===String(b.dataset.storeQty));if(!item)return;item.qty=(item.qty||1)+Number(b.dataset.dir||0);if(item.qty<=0)storeCart=storeCart.filter(x=>String(x.id)!==String(item.id));renderStoreCart();});
-  $('#storeSearch')?.addEventListener('input',renderStoreProducts);$$('#storePage [data-store-category]').forEach(b=>b.addEventListener('click',()=>{$$('#storePage [data-store-category]').forEach(x=>x.classList.remove('active'));b.classList.add('active');storeCategory=b.dataset.storeCategory;renderStoreProducts();}));$$('#storePage [data-store-scroll]').forEach(a=>a.addEventListener('click',e=>{e.preventDefault();document.querySelector(a.getAttribute('href'))?.scrollIntoView({behavior:'smooth'});}));
-  ['storeHeroShopBtn'].forEach(id=>$('#'+id)?.addEventListener('click',()=>document.querySelector('#store-catalog')?.scrollIntoView({behavior:'smooth'})));['storeHeroOrderBtn','storeFeatureOrderBtn','storeBannerOrderBtn','storeEmptyOrderBtn'].forEach(id=>$('#'+id)?.addEventListener('click',openStoreCustomOrder)); $('#storeViewAllBtn')?.addEventListener('click',()=>document.querySelector('#store-catalog')?.scrollIntoView({behavior:'smooth'}));
+  $('#storeSearch')?.addEventListener('input',renderStoreProducts);
+  $$('#storePage [data-store-category]').forEach(b=>b.addEventListener('click',()=>{$$('#storePage [data-store-category]').forEach(x=>x.classList.remove('active'));b.classList.add('active');storeCategory=b.dataset.storeCategory;renderStoreProducts();}));
+  $$('#storePage [data-store-page]').forEach(a=>a.addEventListener('click',e=>{e.preventDefault();setStorePage(a.dataset.storePage||'home');}));
+  $('#storeRegisterBtn')?.addEventListener('click',()=>setStorePage('register'));
+  $('#storeRegisterOrderBtn')?.addEventListener('click',()=>setStorePage('order'));
+  $('#storeRegisterForm')?.addEventListener('submit',registerStoreCustomer);
+  ['storeHeroShopBtn'].forEach(id=>$('#'+id)?.addEventListener('click',()=>setStorePage('products')));
+  ['storeHeroOrderBtn','storeFeatureOrderBtn','storeBannerOrderBtn','storeEmptyOrderBtn'].forEach(id=>$('#'+id)?.addEventListener('click',()=>setStorePage('order')));
+  $('#storeViewAllBtn')?.addEventListener('click',()=>setStorePage('products'));
+  renderStoreRegistration();
+  setStorePage(storePage);
+
 }
 function setupStoreReveal(){const els=$$('#storePage [data-reveal]');if(!('IntersectionObserver'in window)){els.forEach(x=>x.classList.add('is-visible'));return;}const io=new IntersectionObserver(entries=>entries.forEach(e=>{if(e.isIntersecting){e.target.classList.add('is-visible');io.unobserve(e.target);}}),{threshold:.08,rootMargin:'0px 0px -30px'});els.forEach((el,i)=>{if(!el.classList.contains('is-visible')){el.style.transitionDelay=`${Math.min(i*35,280)}ms`;io.observe(el);}});}
 function setupStoreMotion(){if(window.__rafahStoreMotionBound)return;window.__rafahStoreMotionBound=true;if(storeOpen())document.body.classList.add('store-enter');const reduce=matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;if(reduce)return;const page=$('#storePage');if(!page)return;page.addEventListener('pointermove',e=>{const target=e.target.closest('[data-magnetic]');if(!target)return;const r=target.getBoundingClientRect(),dx=(e.clientX-(r.left+r.width/2))*0.08,dy=(e.clientY-(r.top+r.height/2))*0.08;target.style.transform=`translate3d(${dx}px,${dy}px,0)`;});page.addEventListener('pointerout',e=>{const target=e.target.closest('[data-magnetic]');if(target&&!target.contains(e.relatedTarget))target.style.transform='';});const parallaxEls=$$('[data-parallax]',page);let ticking=false;const onScroll=()=>{if(ticking)return;ticking=true;requestAnimationFrame(()=>{const y=window.scrollY;parallaxEls.forEach(el=>{const speed=Number(el.dataset.parallax)||0;el.style.transform=`translate3d(0,${y*speed}px,0)`;});ticking=false;});};window.addEventListener('scroll',onScroll,{passive:true});}
 function openStoreCheckout(){
+  if(!requireStoreRegistration('order'))return;
   if(!storeCart.length){toast('Adicione ao menos um item ao pedido.','info');return;}
   const saved=getStoreContact(),items=storeCart.map(x=>({...x}));
   modal(`<div class="modal-head"><div><span class="eyebrow">PEDIDO</span><h2>Finalize sua solicitação</h2><p class="muted">Sem cadastro. Confirme apenas seus dados para enviarmos o pedido ao estúdio.</p></div><button class="close-modal" data-close-modal>×</button></div><form id="storeCheckoutForm" class="store-public-form"><div class="store-checkout-summary">${items.map(x=>`<div><span>${esc(x.name)} × ${x.qty}</span><b>${storeMoney((Number(x.price)||0)*x.qty)}</b></div>`).join('')}<strong>Total estimado <b>${storeMoney(storeCartTotal())}</b></strong></div><div class="two-col"><label>Seu nome<input id="storeCustomerName" required value="${esc(saved.name)}"></label><label>WhatsApp<input id="storeCustomerWhats" inputmode="tel" required value="${esc(saved.whats)}"></label></div><label>E-mail <small>(opcional)</small><input id="storeCustomerEmail" type="email"></label><label>Observações<textarea id="storeCustomerNote" rows="4" placeholder="Prazo, tamanho, referência ou outro detalhe."></textarea></label><div class="modal-actions"><button type="button" class="btn secondary" data-close-modal>Cancelar</button><button class="btn primary" type="submit">Enviar pedido →</button></div></form>`);
@@ -1162,7 +1211,20 @@ function initStoreAdmin(){
   renderStoreAdmin();refreshStoreRequests();clearInterval(storeRequestPollTimer);storeRequestPollTimer=setInterval(()=>{if(currentPage==='loja')refreshStoreRequests();},15000);
 }
 
-function renderProducts(){const q=($('#productSearch')?.value||'').toLowerCase().trim();const list=products.filter(x=>`${x.name||''} ${x.category||''} ${x.description||''}`.toLowerCase().includes(q));const el=$('#productsGrid');if(!el)return;el.innerHTML=list.map(x=>`<article class="product-card"><div class="product-cover">${x.image_url?`<img src="${esc(x.image_url)}" alt="${esc(x.name)}">`:'<span>▧</span>'}</div><div class="product-body"><div class="product-headline"><h3>${esc(x.name)}</h3><strong>${money(x.price)}</strong></div><small class="product-category">${esc(x.category||'Produto')} ${x.is_published?'<b class="store-published-chip">Loja</b>':''}</small><p>${esc(x.description||'')}</p><div class="product-actions"><button class="icon-action" title="Baixar imagem" data-download-product="${esc(x.id)}">↓</button><button class="btn secondary small" data-edit-product="${esc(x.id)}">Editar</button><button class="btn secondary small danger" data-delete-product="${esc(x.id)}">Remover</button></div></div></article>`).join('')||`<div class="empty-state"><span>▧</span><h3>Nenhum produto cadastrado</h3><p>Cadastre cartaz, logo, identidade visual e outros serviços com preço e imagem.</p><button class="btn primary" data-action="new-product">+ Cadastrar produto</button></div>`;}
+function normalizeWhatsApp(value){return String(value||'').replace(/\D/g,'');}
+function getStoreRegisteredContact(){try{return JSON.parse(localStorage.getItem('rafahstudio-store-registered')||'null')||null;}catch{return null;}}
+function saveStoreRegisteredContact(v){storeRegisteredContact=v;localStorage.setItem('rafahstudio-store-registered',JSON.stringify(v));rememberStoreContact(v?.name||'',v?.whats||'');}
+function renderProducts(){
+  const q=($('#productSearch')?.value||'').toLowerCase().trim();
+  const cat=String($('#productCategoryFilter')?.value||'all');
+  const list=products.filter(x=>(cat==='all'||String(x.category||'')===cat)&&`${x.name||''} ${x.category||''} ${x.description||''}`.toLowerCase().includes(q));
+  const el=$('#productsGrid');if(!el)return;
+  const view=localStorage.getItem('rafahstudio-product-view')||'grid';
+  el.classList.toggle('product-list-view',view==='list');el.classList.toggle('product-grid-view',view!=='list');
+  $$('#produtos [data-product-view]').forEach(b=>b.classList.toggle('active',b.dataset.productView===view));
+  el.innerHTML=list.map(x=>`<article class="product-card"><div class="product-cover">${x.image_url?`<img src="${esc(x.image_url)}" alt="${esc(x.name)}">`:'<span>▧</span>'}</div><div class="product-body"><div class="product-headline"><h3>${esc(x.name)}</h3><strong>${money(x.price)}</strong></div><small class="product-category">${esc(x.category||'Produto')} ${x.is_published?'<b class="store-published-chip">Loja</b>':''}</small><p>${esc(x.description||'')}</p><div class="product-actions"><button class="icon-action" title="Baixar imagem" data-download-product="${esc(x.id)}">↓</button><button class="btn secondary small" data-edit-product="${esc(x.id)}">Editar</button><button class="btn secondary small danger" data-delete-product="${esc(x.id)}">Remover</button></div></div></article>`).join('')||`<div class="empty-state"><span>▧</span><h3>Nenhum produto cadastrado</h3><p>Cadastre cartaz, estampa, logo, identidade visual e outros serviços com preço e imagem.</p><button class="btn primary" data-action="new-product">+ Cadastrar produto</button></div>`;
+}
+
 async function uploadProductImage(file){if(!supabaseClient)throw new Error('Supabase não está disponível.');if(file.size>12*1024*1024)throw new Error('A imagem deve ter no máximo 12 MB.');const safe=(file.name||'produto').replace(/[^a-zA-Z0-9._-]/g,'_');const path=`products/${getOwnerToken()}/${Date.now()}-${safe}`;const {error}=await supabaseClient.storage.from('briefing-files').upload(path,file,{upsert:false,contentType:file.type||'image/png'});if(error)throw error;return supabaseClient.storage.from('briefing-files').getPublicUrl(path).data.publicUrl;}
 function openProductForm(item=null,onSaved=null){const x=item||{name:'',category:'Cartaz',description:'',price:0,image_url:''};modal(`<div class="modal-head"><div><span class="eyebrow">PRODUTO</span><h2>${item?'Editar produto':'Cadastrar produto'}</h2></div><button class="close-modal" data-close-modal>×</button></div><form id="productForm"><div class="two-col"><label>Nome do produto<input id="productName" value="${esc(x.name)}" required placeholder="Ex.: Cartaz para evento"></label><label>Categoria<select id="productCategory">${['Estampa','Cartaz PSD','Arte digital','Template','Pacote de artes','Cartaz','Logo','Identidade visual','Post para Instagram','Social Media','Impressão','Serviço personalizado','Outro'].map(c=>`<option ${c===x.category?'selected':''}>${c}</option>`).join('')}</select></label></div><div class="two-col"><label>Valor (R$)<input id="productPrice" type="number" min="0" step="0.01" value="${Number(x.price)||0}" required></label><label>Imagem para usar como referência<input id="productImage" type="file" accept="image/*,.pdf"></label></div><label class="store-publish-toggle product-publish-field"><input id="productPublished" type="checkbox" ${x.is_published?'checked':''}> Publicar este produto na loja</label><label>Descrição<textarea id="productDescription" rows="4">${esc(x.description||'')}</textarea></label><div id="productImagePreview" class="catalog-modal-preview">${x.image_url?`<img src="${esc(x.image_url)}" alt="Prévia">`:''}</div><div class="modal-actions"><button type="button" class="btn secondary" data-close-modal>Cancelar</button><button class="btn primary" type="submit">Salvar produto</button></div></form>`);let selected=null;$('#productImage').onchange=e=>{selected=e.target.files?.[0]||null;if(selected&&selected.type.startsWith('image/')){const r=new FileReader();r.onload=()=>$('#productImagePreview').innerHTML=`<img src="${r.result}" alt="Prévia">`;r.readAsDataURL(selected);}};$('#productForm').onsubmit=async e=>{e.preventDefault();const btn=e.submitter;btn.disabled=true;try{let url=x.image_url||'';if(selected)url=await uploadProductImage(selected);const data={name:$('#productName').value.trim(),category:$('#productCategory').value,description:$('#productDescription').value.trim(),price:Number($('#productPrice').value)||0,image_url:url,is_published:!!$('#productPublished')?.checked};if(!data.name)throw new Error('Informe o nome do produto.');if(item){const {error}=await supabaseClient.rpc('update_product',{p_owner_secret:getOwnerToken(),p_id:item.id,p_name:data.name,p_category:data.category,p_description:data.description,p_price:data.price,p_image_url:data.image_url});if(error)throw error;products=products.map(v=>String(v.id)===String(item.id)?{...v,...data}:v);}else{const {data:id,error}=await supabaseClient.rpc('create_product',{p_owner_secret:getOwnerToken(),p_name:data.name,p_category:data.category,p_description:data.description,p_price:data.price,p_image_url:data.image_url});if(error)throw error;products.unshift({id,...data,created:todayISO()});}if(supabaseClient&&data.is_published!==undefined){const pub=await supabaseClient.rpc('set_product_published',{p_owner_secret:getOwnerToken(),p_id:item?.id||products[0]?.id,p_is_published:data.is_published});if(pub.error)console.warn('[RafahStudio] Publicação na loja ainda não está disponível no banco:',pub.error.message||pub.error);}persist();closeModal();renderProducts();toast(item?'Produto atualizado.':'Produto cadastrado.','success');onSaved?.();}catch(err){toast(err?.message||'Não foi possível salvar o produto.','error');btn.disabled=false;}};}
 async function deleteProduct(id){const item=products.find(x=>String(x.id)===String(id));if(!item)return;if(!confirm(`Remover “${item.name}” dos produtos?`))return;const {error}=await supabaseClient.rpc('delete_product',{p_owner_secret:getOwnerToken(),p_id:id});if(error){toast(error.message||'Não foi possível remover.','error');return;}products=products.filter(x=>String(x.id)!==String(id));persist();renderProducts();toast('Produto removido.','info');}
@@ -2009,6 +2071,9 @@ function setupEvents(){
  const nm=$('#notificationMode'),ns=$('#notificationSound'); if(nm){nm.value=getNotificationPrefs().mode;nm.onchange=()=>{const p=getNotificationPrefs();p.mode=nm.value;saveNotificationPrefs(p);unlockNotificationAudio();requestDesktopNotifications();};} if(ns){ns.value=getNotificationPrefs().sound;ns.onchange=()=>{const p=getNotificationPrefs();p.sound=ns.value;saveNotificationPrefs(p);unlockNotificationAudio();playNotificationSound(true);};}
  $('#testNotificationBtn')?.addEventListener('click',()=>{unlockNotificationAudio();playNotificationSound(true);speakNotification('Teste de notificação. Este aviso não será salvo.');showNotificationPopup('Teste de notificação','Este teste aparece somente como popup e não é salvo no histórico.');requestDesktopNotifications();});
 
+ $('#productSearch')?.addEventListener('input',renderProducts);
+ $('#productCategoryFilter')?.addEventListener('change',renderProducts);
+ $$('#produtos [data-product-view]').forEach(b=>b.addEventListener('click',()=>{localStorage.setItem('rafahstudio-product-view',b.dataset.productView);renderProducts();}));
  $('#globalSearch').oninput=e=>{const q=e.target.value.trim();if(q){go('pedidos');$('#orderSearch').value=q;renderOrders();}};$('#orderSearch').oninput=renderOrders;$('#orderSort').onchange=renderOrders;$('#clientSearch').oninput=renderClients;$('#catalogSearch').oninput=renderCatalog;$('#quoteSearch').oninput=renderQuotes;$('#quoteFilter').onchange=renderQuotes;['finStart','finEnd','finStatus'].forEach(id=>$('#'+id).onchange=renderFinance);$('#clearFinance').onclick=()=>{$('#finStart').value='';$('#finEnd').value='';$('#finStatus').value='all';renderFinance();};$('#copyBriefingBtn').onclick=()=>generateLink();
  /* Loja pública */
  setupStorePublic();
