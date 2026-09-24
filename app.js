@@ -2,6 +2,7 @@
 const $ = (s, root=document) => root.querySelector(s);
 const $$ = (s, root=document) => [...root.querySelectorAll(s)];
 const APP = 'rafahstudio';
+const APP_VERSION = '1.0-stage1';
 const KEYS = { user:`${APP}:user`, theme:`${APP}:theme`, designer:`${APP}:designer`, orders:`${APP}:orders`, clients:`${APP}:clients`, quotes:`${APP}:quotes`, catalog:`${APP}:catalog`, notifications:`${APP}:notifications`, trash:`${APP}:trash`, deletedRemote:`${APP}:deleted-remote`, deletedRemoteFingerprints:`${APP}:deleted-remote-fingerprints` };
 const STATUS = ['Novo','Em andamento','Esperando aprovação','Alteração','Entregue','Pago','Finalizado'];
 const QUOTE_STATUS = ['Rascunho','Enviado','Aprovado','Recusado'];
@@ -62,10 +63,13 @@ const ownerTokenKey = user => `${APP}:owner-token:${user||'default'}`;
 const publicTokenKey = user => `${APP}:public-token:${user||'default'}`;
 const storeTokenKey = user => `${APP}:store-token:${user||'default'}`;
 function randomToken(){return (crypto.randomUUID?.()||uid('tok'))+'-'+Math.random().toString(36).slice(2)+Date.now().toString(36);}
+function safeStorageGet(key,fallback=null){try{return localStorage.getItem(key)??fallback;}catch(err){console.warn('[RafahStudio] Leitura do armazenamento falhou:',key,err);return fallback;}}
+function safeStorageSet(key,value){try{localStorage.setItem(key,value);return true;}catch(err){console.error('[RafahStudio] Não foi possível salvar no armazenamento:',key,err);if(typeof toast==='function')toast('Não foi possível salvar localmente. Verifique o espaço disponível no navegador.','error');return false;}}
 function accountScopeId(){return currentUser?.id||currentUser?.user||currentUser?.email||currentUser?.username||'default';}
-function getOwnerToken(){const u=accountScopeId();let t=localStorage.getItem(ownerTokenKey(u));if(!t){t=randomToken();localStorage.setItem(ownerTokenKey(u),t);}return t;}
-function getPublicToken(){const u=accountScopeId();let t=localStorage.getItem(publicTokenKey(u));if(!t){t=randomToken();localStorage.setItem(publicTokenKey(u),t);}return t;}
-function getStoreToken(){const u=accountScopeId();let t=localStorage.getItem(storeTokenKey(u));if(!t){t=randomToken();localStorage.setItem(storeTokenKey(u),t);}return t;}
+function getScopedToken(keyFactory){const u=accountScopeId();let t=safeStorageGet(keyFactory(u),'');if(!t){t=randomToken();safeStorageSet(keyFactory(u),t);}return t;}
+function getOwnerToken(){return getScopedToken(ownerTokenKey);}
+function getPublicToken(){return getScopedToken(publicTokenKey);}
+function getStoreToken(){return getScopedToken(storeTokenKey);}
 function isPublicHashRoute(){
   const hash=String(location.hash||'');
   return hash.startsWith('#briefing=') || hash.startsWith('#pedido=');
@@ -161,10 +165,22 @@ function trackingUrlForOrder(o){
   const base=location.href.split('#')[0];
   return `${base}#pedido=${encodeURIComponent(o.trackingToken)}`;
 }
-async function syncOrderTracking(o){
+async function syncOrderTracking(o,options={}){
   if(!o)return '';
   const token=await ensureOrderTracking(o);
   if(token&&currentUser){
+    if(options.recordStatus&&options.statusFrom&&options.statusFrom!==o.status){
+      try{
+        const {data,error}=await supabaseClient.rpc('add_order_tracking_event',{
+          p_owner_secret:getOwnerToken(),p_tracking_token:token,p_kind:'status',
+          p_message:`Status alterado de ${options.statusFrom} para ${o.status}.`,p_image_url:'',
+          p_meta:{from:options.statusFrom,to:o.status}
+        });
+        if(error)throw error;
+        o.trackingEvents=o.trackingEvents||[];
+        o.trackingEvents.unshift({id:data,tracking_token:token,order_id:String(o.id),author:'designer',kind:'status',message:`Status alterado de ${options.statusFrom} para ${o.status}.`,image_url:'',meta:{from:options.statusFrom,to:o.status},created_at:new Date().toISOString()});
+      }catch(err){console.warn('[RafahStudio] Evento de status:',err);}
+    }
     await broadcastTrackingUpdate(token);
     const exists=designerRealtimeChannels.some(ch=>ch.topic===`realtime:rafah-tracking-${token}`);
     if(!exists&&typeof subscribeDesignerTracking==='function')setTimeout(()=>subscribeDesignerTracking(),0);
@@ -186,9 +202,9 @@ function renderTrackingEventCards(events=[]){
   return visible.map(ev=>{
     const payment=ev.kind==='payment'&&ev.meta?ev.meta:{};
     const img=ev.image_url?`<button type="button" class="tracking-art-preview" data-public-art="${esc(ev.image_url)}"><img src="${esc(ev.image_url)}" alt="Atualização da arte"><span>Ampliar arte ↗</span></button>`:'';
-    const label=ev.kind==='art'?'Nova versão da arte':ev.kind==='alteration'?'Alteração solicitada':ev.kind==='approval'?'Arte aprovada':ev.kind==='payment'?'Pagamento via PIX':'Mensagem';
+    const label=ev.kind==='art'?'Nova versão da arte':ev.kind==='status'?'Status atualizado':ev.kind==='alteration'?'Alteração solicitada':ev.kind==='approval'?'Arte aprovada':ev.kind==='payment'?'Pagamento via PIX':'Mensagem';
     const paymentHtml=ev.kind==='payment'?`<div class="tracking-pix-card"><div><small>PIX • ${esc(payment.pix_type||'Chave')}</small><b>${esc(payment.pix_key||'')}</b><span>${esc(payment.pix_name||'')}</span></div><button type="button" class="btn secondary small" data-copy-pix="${esc(payment.pix_key||'')}">Copiar chave</button></div>`:'';
-    return `<article class="tracking-feed-item ${esc(ev.kind||'update')}"><div class="tracking-feed-marker">${ev.kind==='approval'?'✓':ev.kind==='alteration'?'↻':'✦'}</div><div class="tracking-feed-body"><div class="tracking-feed-meta"><b>${esc(label)}</b><small>${new Date(ev.created_at).toLocaleString('pt-BR')}</small></div>${ev.message?`<p>${esc(ev.message)}</p>`:''}${paymentHtml}${img}</div></article>`;
+    return `<article class="tracking-feed-item ${esc(ev.kind||'update')}"><div class="tracking-feed-marker">${ev.kind==='status'?'↗':ev.kind==='approval'?'✓':ev.kind==='alteration'?'↻':'✦'}</div><div class="tracking-feed-body"><div class="tracking-feed-meta"><b>${esc(label)}</b><small>${new Date(ev.created_at).toLocaleString('pt-BR')}</small></div>${ev.message?`<p>${esc(ev.message)}</p>`:''}${paymentHtml}${img}</div></article>`;
   }).join('');
 }
 function classifyClientMessage(text){
@@ -632,8 +648,8 @@ async function syncOnlineBriefings(){
   }
 }
 
-const read = (key, fallback) => { try { const v=localStorage.getItem(key); return v===null?fallback:JSON.parse(v); } catch { return fallback; } };
-const write = (key, value) => localStorage.setItem(key, JSON.stringify(value));
+const read = (key, fallback) => { try { const v=safeStorageGet(key,null); return v===null?fallback:JSON.parse(v); } catch(err) { console.warn('[RafahStudio] Dados locais inválidos, usando padrão:',key,err); return fallback; } };
+const write = (key, value) => safeStorageSet(key, JSON.stringify(value));
 
 const DEFAULT_DESIGNER = {name:'',brand:'RafahStudio',whats:'',email:'',insta:'',portfolio:'',area:'Designer gráfico',bio:'',photo:'',banner:'',pixType:'CPF',pixKey:'',pixName:''};
 let accounts = [];
@@ -721,8 +737,8 @@ function workspaceSnapshot(){return {version:5,ownerToken:getOwnerToken(),public
 function workspaceHasData(state){return !!(state&&([state.orders,state.clients,state.quotes,state.catalog,state.products].some(x=>Array.isArray(x)&&x.length)));}
 function applyWorkspaceState(state){
   if(!state||typeof state!=='object')return;
-  if(state.ownerToken)localStorage.setItem(ownerTokenKey(accountScopeId()),String(state.ownerToken));
-  if(state.publicToken)localStorage.setItem(publicTokenKey(accountScopeId()),String(state.publicToken));
+  if(state.ownerToken)safeStorageSet(ownerTokenKey(accountScopeId()),String(state.ownerToken));
+  if(state.publicToken)safeStorageSet(publicTokenKey(accountScopeId()),String(state.publicToken));
   if(Array.isArray(state.orders))orders=state.orders.map(normalizeOrder);
   if(Array.isArray(state.clients))clients=state.clients;
   if(Array.isArray(state.quotes))quotes=state.quotes;
@@ -813,8 +829,8 @@ function closeModal(){
   backdrop.classList.remove('is-visible');
   setTimeout(()=>{root.innerHTML='';document.body.classList.remove('modal-open');},150);
 }
-function getNotificationPrefs(){const key=`${APP}:notification-prefs:${accountScopeId()}`;try{return {...{mode:'sound',sound:'suave'},...JSON.parse(localStorage.getItem(key)||'{}')}}catch{return {mode:'sound',sound:'suave'}}}
-function saveNotificationPrefs(v){localStorage.setItem(`${APP}:notification-prefs:${accountScopeId()}`,JSON.stringify(v));}
+function getNotificationPrefs(){const key=`${APP}:notification-prefs:${accountScopeId()}`;try{return {...{mode:'sound',sound:'suave'},...JSON.parse(safeStorageGet(key,'{}'))}}catch{return {mode:'sound',sound:'suave'}}}
+function saveNotificationPrefs(v){safeStorageSet(`${APP}:notification-prefs:${accountScopeId()}`,JSON.stringify(v));}
 let notificationAudioCtx=null;
 function unlockNotificationAudio(){
   try{
@@ -1062,8 +1078,8 @@ function storeCategoryMatches(item,selected){const cat=storeCategoryKey(item?.ca
 function storeIsDigital(item){const c=storeCategoryKey(item?.category);return ['estampa','estampas','cartaz psd','psd','arte digital','template','pacote de artes','arquivo digital'].some(x=>c===x||c.includes(x));}
 function storeActionLabel(item){return storeIsDigital(item)?'Adicionar ao pedido':'Solicitar serviço';}
 function storeActionMeta(item){return storeIsDigital(item)?'Produto digital':'Serviço personalizado';}
-function rememberStoreContact(name,whats){if(name)localStorage.setItem('rafahstudio-store-name',name);if(whats)localStorage.setItem('rafahstudio-store-whats',whats);}
-function getStoreContact(){return {name:localStorage.getItem('rafahstudio-store-name')||'',whats:localStorage.getItem('rafahstudio-store-whats')||''};}
+function rememberStoreContact(name,whats){if(name)safeStorageSet('rafahstudio-store-name',name);if(whats)safeStorageSet('rafahstudio-store-whats',whats);}
+function getStoreContact(){return {name:safeStorageGet('rafahstudio-store-name',''),whats:safeStorageGet('rafahstudio-store-whats','')};}
 function renderStoreHeroVisual(){
   const root=$('#storeHeroVisual');if(!root)return;
   const items=storeItems.filter(x=>x.image_url).slice(0,5);
@@ -1212,14 +1228,14 @@ function initStoreAdmin(){
 }
 
 function normalizeWhatsApp(value){return String(value||'').replace(/\D/g,'');}
-function getStoreRegisteredContact(){try{return JSON.parse(localStorage.getItem('rafahstudio-store-registered')||'null')||null;}catch{return null;}}
-function saveStoreRegisteredContact(v){storeRegisteredContact=v;localStorage.setItem('rafahstudio-store-registered',JSON.stringify(v));rememberStoreContact(v?.name||'',v?.whats||'');}
+function getStoreRegisteredContact(){try{return JSON.parse(safeStorageGet('rafahstudio-store-registered','null'))||null;}catch{return null;}}
+function saveStoreRegisteredContact(v){storeRegisteredContact=v;safeStorageSet('rafahstudio-store-registered',JSON.stringify(v));rememberStoreContact(v?.name||'',v?.whats||'');}
 function renderProducts(){
   const q=($('#productSearch')?.value||'').toLowerCase().trim();
   const cat=String($('#productCategoryFilter')?.value||'all');
   const list=products.filter(x=>(cat==='all'||String(x.category||'')===cat)&&`${x.name||''} ${x.category||''} ${x.description||''}`.toLowerCase().includes(q));
   const el=$('#productsGrid');if(!el)return;
-  const view=localStorage.getItem('rafahstudio-product-view')||'grid';
+  const view=safeStorageGet('rafahstudio-product-view','grid');
   el.classList.toggle('product-list-view',view==='list');el.classList.toggle('product-grid-view',view!=='list');
   $$('#produtos [data-product-view]').forEach(b=>b.classList.toggle('active',b.dataset.productView===view));
   el.innerHTML=list.map(x=>`<article class="product-card"><div class="product-cover">${x.image_url?`<img src="${esc(x.image_url)}" alt="${esc(x.name)}">`:'<span>▧</span>'}</div><div class="product-body"><div class="product-headline"><h3>${esc(x.name)}</h3><strong>${money(x.price)}</strong></div><small class="product-category">${esc(x.category||'Produto')} ${x.is_published?'<b class="store-published-chip">Loja</b>':''}</small><p>${esc(x.description||'')}</p><div class="product-actions"><button class="icon-action" title="Baixar imagem" data-download-product="${esc(x.id)}">↓</button><button class="btn secondary small" data-edit-product="${esc(x.id)}">Editar</button><button class="btn secondary small danger" data-delete-product="${esc(x.id)}">Remover</button></div></div></article>`).join('')||`<div class="empty-state"><span>▧</span><h3>Nenhum produto cadastrado</h3><p>Cadastre cartaz, estampa, logo, identidade visual e outros serviços com preço e imagem.</p><button class="btn primary" data-action="new-product">+ Cadastrar produto</button></div>`;
@@ -1543,8 +1559,8 @@ function renderPeopleGallery(o){
   return withPhotos.map(({p,i,photo})=>{const src=photo.url||photo.previewUrl||photo.dataUrl;return `<div class="file-tile"><img src="${esc(src)}" alt="${esc(p.name||`Pessoa ${i+1}`)}"><div><b>${esc(p.name||`Pessoa ${i+1}`)}</b><small>${esc(p.info||'Foto para a arte')}</small></div><a class="btn secondary small" href="${esc(src)}" target="_blank" rel="noopener">Abrir original</a></div>`;}).join('');
 }
 function formatBytes(n){if(!n)return'arquivo';const u=['B','KB','MB','GB'];let i=0,x=n;while(x>=1024&&i<u.length-1){x/=1024;i++;}return`${x.toFixed(i?1:0)} ${u[i]}`;}
-function cycleStatus(id){const o=orders.find(x=>x.id===id);if(!o)return;const i=STATUS.indexOf(o.status);const next=STATUS[Math.min(i+1,STATUS.length-1)];if(next===o.status){toast('O pedido já está no status final.','info');return;}const old=o.status;o.status=next;if(next==='Pago'||next==='Finalizado')o.paid=true;addHistory(o,`Status alterado de ${old} para ${next}`);persist();render();closeModal();syncOrderTracking(o);notify(`Status atualizado: ${next}`,`${o.project} • ${o.client}`,'info','pedidos',o.id);toast(`Pedido movido para ${next}.`);}
-function togglePaid(id){const o=orders.find(x=>x.id===id);if(!o)return;o.paid=!o.paid;if(o.paid){o.status='Pago';addHistory(o,'Pagamento recebido');notify('Pagamento recebido',`${o.project} • ${money(o.value)}`,'success','pedidos',o.id);}else{if(o.status==='Pago'||o.status==='Finalizado')o.status='Entregue';addHistory(o,'Pagamento marcado como pendente');}persist();render();syncOrderTracking(o);toast(o.paid?'Pagamento registrado.':'Pagamento desmarcado.');}
+function cycleStatus(id){const o=orders.find(x=>x.id===id);if(!o)return;const i=STATUS.indexOf(o.status);const next=STATUS[Math.min(i+1,STATUS.length-1)];if(next===o.status){toast('O pedido já está no status final.','info');return;}const old=o.status;o.status=next;if(next==='Pago'||next==='Finalizado')o.paid=true;addHistory(o,`Status alterado de ${old} para ${next}`);persist();render();closeModal();syncOrderTracking(o,{recordStatus:true,statusFrom:old});notify(`Status atualizado: ${next}`,`${o.project} • ${o.client}`,'info','pedidos',o.id);toast(`Pedido movido para ${next}.`);}
+function togglePaid(id){const o=orders.find(x=>x.id===id);if(!o)return;const old=o.status;o.paid=!o.paid;if(o.paid){o.status='Pago';addHistory(o,'Pagamento recebido');notify('Pagamento recebido',`${o.project} • ${money(o.value)}`,'success','pedidos',o.id);}else{if(o.status==='Pago'||o.status==='Finalizado')o.status='Entregue';addHistory(o,'Pagamento marcado como pendente');}persist();render();syncOrderTracking(o,{recordStatus:true,statusFrom:old});toast(o.paid?'Pagamento registrado.':'Pagamento desmarcado.');}
 function moveStatus(id,direction){
   const o=orders.find(x=>x.id===id); if(!o)return;
   const i=STATUS.indexOf(o.status);
@@ -1555,7 +1571,7 @@ function moveStatus(id,direction){
   if(next==='Pago'||next==='Finalizado')o.paid=true;
   if(old==='Pago'&&next!=='Pago'&&next!=='Finalizado')o.paid=false;
   addHistory(o,`Pedido movido de ${old} para ${next}`);
-  persist(); render(); syncOrderTracking(o);
+  persist(); render(); syncOrderTracking(o,{recordStatus:true,statusFrom:old});
   notify(`Pedido movido para ${next}`,`${o.project} • ${o.client}`,'info','pedidos',o.id);
 }
 
@@ -2073,7 +2089,7 @@ function setupEvents(){
 
  $('#productSearch')?.addEventListener('input',renderProducts);
  $('#productCategoryFilter')?.addEventListener('change',renderProducts);
- $$('#produtos [data-product-view]').forEach(b=>b.addEventListener('click',()=>{localStorage.setItem('rafahstudio-product-view',b.dataset.productView);renderProducts();}));
+ $$('#produtos [data-product-view]').forEach(b=>b.addEventListener('click',()=>{safeStorageSet('rafahstudio-product-view',b.dataset.productView);renderProducts();}));
  $('#globalSearch').oninput=e=>{const q=e.target.value.trim();if(q){go('pedidos');$('#orderSearch').value=q;renderOrders();}};$('#orderSearch').oninput=renderOrders;$('#orderSort').onchange=renderOrders;$('#clientSearch').oninput=renderClients;$('#catalogSearch').oninput=renderCatalog;$('#quoteSearch').oninput=renderQuotes;$('#quoteFilter').onchange=renderQuotes;['finStart','finEnd','finStatus'].forEach(id=>$('#'+id).onchange=renderFinance);$('#clearFinance').onclick=()=>{$('#finStart').value='';$('#finEnd').value='';$('#finStatus').value='all';renderFinance();};$('#copyBriefingBtn').onclick=()=>generateLink();
  /* Loja pública */
  setupStorePublic();
@@ -2103,7 +2119,7 @@ function setupEvents(){
  $('#ordersTable').addEventListener('dragend',e=>{const card=e.target.closest('[data-drag-order]');card?.classList.remove('is-dragging');$$('.order-stage.is-drop-target').forEach(x=>x.classList.remove('is-drop-target'));draggedOrderId=null;});
  $('#ordersTable').addEventListener('dragover',e=>{const stage=e.target.closest('[data-stage]');if(!stage)return;e.preventDefault();e.dataTransfer.dropEffect='move';$$('.order-stage.is-drop-target').forEach(x=>x.classList.remove('is-drop-target'));stage.classList.add('is-drop-target');});
  $('#ordersTable').addEventListener('dragleave',e=>{const stage=e.target.closest('[data-stage]');if(stage&&!stage.contains(e.relatedTarget))stage.classList.remove('is-drop-target');});
- $('#ordersTable').addEventListener('drop',e=>{const stage=e.target.closest('[data-stage]');if(!stage)return;e.preventDefault();stage.classList.remove('is-drop-target');const id=draggedOrderId||e.dataTransfer.getData('text/plain');if(!id)return;const o=orders.find(x=>String(x.id)===String(id));if(!o)return;const next=stage.dataset.stage;if(o.status===next){toast('O pedido já está nesta etapa.','info');return;}const old=o.status;o.status=next;if(next==='Pago'||next==='Finalizado')o.paid=true;if(old==='Pago'&&next!=='Pago'&&next!=='Finalizado')o.paid=false;addHistory(o,`Pedido movido de ${old} para ${next}`);persist();render();syncOrderTracking(o);notify(`Pedido movido para ${next}`,`${o.project} • ${o.client}`,'info','pedidos',o.id);toast(`Pedido movido para ${next}.`);});
+ $('#ordersTable').addEventListener('drop',e=>{const stage=e.target.closest('[data-stage]');if(!stage)return;e.preventDefault();stage.classList.remove('is-drop-target');const id=draggedOrderId||e.dataTransfer.getData('text/plain');if(!id)return;const o=orders.find(x=>String(x.id)===String(id));if(!o)return;const next=stage.dataset.stage;if(o.status===next){toast('O pedido já está nesta etapa.','info');return;}const old=o.status;o.status=next;if(next==='Pago'||next==='Finalizado')o.paid=true;if(old==='Pago'&&next!=='Pago'&&next!=='Finalizado')o.paid=false;addHistory(o,`Pedido movido de ${old} para ${next}`);persist();render();syncOrderTracking(o,{recordStatus:true,statusFrom:old});notify(`Pedido movido para ${next}`,`${o.project} • ${o.client}`,'info','pedidos',o.id);toast(`Pedido movido para ${next}.`);});
  document.addEventListener('click',handleDelegated);
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeModal();$('#notificationPanel').classList.remove('open');}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='n'){e.preventDefault();openOrder();}});
 }
@@ -2302,6 +2318,17 @@ function bindAuthState(){
 
 window.addEventListener('hashchange',()=>{ renderPublicRoute().catch(e=>console.error('[RafahStudio] Rota pública:',e)); });
 bindAuthState();
+window.addEventListener('error',event=>{
+  console.error('[RafahStudio] Erro de execução:',event.error||event.message);
+  if(document.visibilityState!=='hidden'&&typeof toast==='function')toast('O RafahStudio encontrou um erro inesperado. A ação não foi concluída.','error');
+});
+window.addEventListener('unhandledrejection',event=>{
+  console.error('[RafahStudio] Promessa rejeitada:',event.reason);
+  if(document.visibilityState!=='hidden'&&typeof toast==='function')toast('Uma operação não foi concluída. Tente novamente.','error');
+});
+window.addEventListener('beforeunload',()=>{
+  try{if(workspaceRemoteReady&&workspaceSaveTimer){clearTimeout(workspaceSaveTimer);saveWorkspaceRemote();}}catch(err){console.warn('[RafahStudio] Salvamento final:',err);}
+});
 init();
 
 /* RAFAHSTUDIO DEADLINE TAGS */
