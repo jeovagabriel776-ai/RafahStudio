@@ -108,6 +108,11 @@
       </div>
     </header>
 
+    <section class="store-banner-rail" aria-label="Banners da loja">
+      <div id="storeBannerTrack" class="store-banner-track"></div>
+      <div id="storeBannerDots" class="store-banner-dots"></div>
+    </section>
+
     <main class="store-main" id="store-home">
       <section class="store-hero store-section-frame store-view-page" data-store-view="home" data-parallax="0.04">
         <div class="store-hero-bg-shape shape-a" aria-hidden="true"></div><div class="store-hero-bg-shape shape-b" aria-hidden="true"></div>
@@ -161,7 +166,7 @@
 
       <section class="store-spotlight store-view-page" data-store-view="home" data-reveal>
         <div><span class="store-kicker">PARA QUEM QUER ALGO ÚNICO</span><h2>Seu projeto não precisa caber em um catálogo.</h2><p>Envie sua ideia, prazo, referência e o que precisa. Faça seu cadastro uma vez e acompanhe seus próximos pedidos com o mesmo WhatsApp.</p><button class="store-primary" id="storeFeatureOrderBtn" data-magnetic>Solicitar projeto <span>→</span></button></div>
-        <div class="store-spotlight-art"><div class="spotlight-glow"></div><img src="assets/logo2.svg" alt="RafahStudio"></div>
+        <div class="store-spotlight-art"><div class="spotlight-glow"></div><span class="store-spotlight-mark">RS</span><b>IDENTIDADE<br><em>VISUAL</em></b></div>
       </section>
 
       <section id="store-order" class="store-custom-order store-view-page" data-store-view="order" data-reveal>
@@ -181,7 +186,7 @@
         </div>
       </section>
 
-      <footer class="store-footer store-view-page" data-store-view="home"><div class="store-footer-brand"><img src="assets/logo.svg" alt="RafahStudio"></div><div id="storeSocialDock"></div><small>RafahStudio • artes digitais, materiais editáveis e serviços de design.</small></footer>
+      <footer class="store-footer store-view-page" data-store-view="home"><div class="store-footer-brand"><strong>RafahStudio</strong><small>Design • Estampa • Digital</small></div><div id="storeSocialDock"></div><small>RafahStudio • artes digitais, materiais editáveis e serviços de design.</small></footer>
     </main>
   </div>
 
@@ -212,7 +217,7 @@
         <button class="nav-item" data-page="conversas" title="Conversas" aria-label="Conversas"><span class="nav-icon"><img src="assets/icons/chat.svg" alt=""></span><span>Conversas</span><em id="navConversations">0</em></button>
         <button class="nav-item" data-page="catalogo" title="Catálogo" aria-label="Catálogo"><span class="nav-icon"><img src="assets/icons/catalog.svg" alt=""></span><span>Catálogo</span></button>
         <button class="nav-item" data-page="produtos" title="Produtos" aria-label="Produtos"><span class="nav-icon"><img src="assets/icons/products.svg" alt=""></span><span>Produtos</span></button>
-        <button class="nav-item" data-page="loja" title="Loja" aria-label="Loja"><span class="nav-icon"><img src="assets/icons/store.svg" alt=""></span><span>Loja</span><em id="navStoreRequests">0</em></button>
+        <button class="nav-item" data-page="loja" title="Loja" aria-label="Loja"><span class="nav-icon"><img src="assets/icons/store.svg" alt=""></span><span>Loja</span></button>
         <button class="nav-item" data-page="orcamentos" title="Orçamentos" aria-label="Orçamentos"><span class="nav-icon"><img src="assets/icons/quotes.svg" alt=""></span><span>Orçamentos</span></button>
         <button class="nav-item" data-page="financeiro" title="Financeiro" aria-label="Financeiro"><span class="nav-icon"><img src="assets/icons/finance.svg" alt=""></span><span>Financeiro</span></button>
       </nav>
@@ -249,7 +254,7 @@
         <button class="mobile-nav-item" data-page="conversas" title="Conversas" aria-label="Conversas"><span><img src="assets/icons/chat.svg" alt=""></span><em id="mobileNavConversations">0</em></button>
         <button class="mobile-nav-item" data-page="clientes" title="Clientes" aria-label="Clientes"><span><img src="assets/icons/clients.svg" alt=""></span></button>
         <button class="mobile-nav-item" data-page="produtos" title="Produtos" aria-label="Produtos"><span><img src="assets/icons/products.svg" alt=""></span></button>
-        <button class="mobile-nav-item" data-page="loja" title="Loja" aria-label="Loja"><span><img src="assets/icons/store.svg" alt=""></span><em id="mobileNavStoreRequests">0</em></button>
+        <button class="mobile-nav-item" data-page="loja" title="Loja" aria-label="Loja"><span><img src="assets/icons/store.svg" alt=""></span></button>
         <button class="mobile-nav-item more" id="mobileMoreBtn" type="button" title="Mais" aria-label="Mais"><span>•••</span></button>
       </nav>
 
@@ -293,8 +298,8 @@
       <section id="loja" class="page">
         <div class="page-head"><div><span class="eyebrow">VITRINE PÚBLICA</span><h1>Loja</h1><p>Publique seus produtos e compartilhe sua vitrine com clientes.</p></div><div class="page-head-actions"><button class="btn secondary" id="copyStoreLinkBtn">↗ Copiar link</button><button class="btn primary" id="openStorePreviewBtn">Abrir loja →</button></div></div>
         <div class="store-admin-hero card"><div><span class="eyebrow">SUA LOJA</span><h2>Uma vitrine para seus produtos</h2><p id="storeLinkText">Gere seu link público para compartilhar.</p><div class="store-admin-actions"><button class="btn secondary small" id="generateStoreLinkBtn">Gerar link</button><button class="btn secondary small" id="copyStoreLinkBtn2">Copiar</button></div></div><div class="store-admin-stats"><div><small>Publicados</small><strong id="storePublishedCount">0</strong></div><div><small>Produtos</small><strong id="storeAllCount">0</strong></div><div><small>Solicitações</small><strong id="storeRequestCount">0</strong></div></div></div>
+        <div class="card store-admin-banners"><div class="card-title"><div><b>Banners da loja</b><small>Adicione até 3 imagens para o destaque principal da vitrine. Recomendado: 1600 × 600 px.</small></div><span class="store-admin-note">Rotação automática</span></div><div id="storeBannerSlots" class="store-banner-slots"></div></div>
         <div class="card store-admin-products"><div class="card-title"><div><b>Produtos da loja</b><small>Escolha o que ficará visível na vitrine.</small></div><button class="btn primary small" data-action="new-product">+ Cadastrar produto</button></div><div id="storeAdminProductList"></div></div>
-        <div class="card store-request-card"><div class="card-title"><div><b>Solicitações recebidas</b><small>Pedidos iniciados pela loja pública.</small></div></div><div id="storeRequestsList"></div></div>
       </section>
       <section id="financeiro" class="page"><div class="page-head"><div><span class="eyebrow">FINANCEIRO</span><h1>Financeiro</h1><p>Veja o que entrou, o que está pendente e filtre por período.</p></div></div><div class="filter-card"><label>Data inicial<input type="date" id="finStart"></label><label>Data final<input type="date" id="finEnd"></label><label>Status<select id="finStatus"><option value="all">Todos</option><option value="paid">Pagos</option><option value="pending">Pendentes</option></select></label><button class="btn secondary" id="clearFinance">Limpar</button></div><div class="finance-metrics"><div class="finance-total"><small>Total filtrado</small><strong id="fTotal">R$ 0,00</strong></div><div><small>Recebido</small><strong id="fPaid">R$ 0,00</strong></div><div><small>Pendente</small><strong id="fPending">R$ 0,00</strong></div><div><small>Ticket médio</small><strong id="fAverage">R$ 0,00</strong></div></div><div class="table-card"><div class="table-head finance-head"><span>Projeto</span><span>Cliente</span><span>Data</span><span>Status</span><span>Valor</span><span></span></div><div id="financeTable"></div></div></section>
 

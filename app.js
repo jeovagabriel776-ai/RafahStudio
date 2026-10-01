@@ -651,7 +651,7 @@ async function syncOnlineBriefings(){
 const read = (key, fallback) => { try { const v=safeStorageGet(key,null); return v===null?fallback:JSON.parse(v); } catch(err) { console.warn('[RafahStudio] Dados locais inválidos, usando padrão:',key,err); return fallback; } };
 const write = (key, value) => safeStorageSet(key, JSON.stringify(value));
 
-const DEFAULT_DESIGNER = {name:'',brand:'RafahStudio',whats:'',email:'',insta:'',portfolio:'',area:'Designer gráfico',bio:'',photo:'',banner:'',pixType:'CPF',pixKey:'',pixName:''};
+const DEFAULT_DESIGNER = {name:'',brand:'RafahStudio',whats:'',email:'',insta:'',portfolio:'',area:'Designer gráfico',bio:'',photo:'',banner:'',storeBanners:[],pixType:'CPF',pixKey:'',pixName:''};
 let accounts = [];
 let currentUser = read(KEYS.user, null);
 let designer = {...DEFAULT_DESIGNER};
@@ -691,7 +691,7 @@ function normalizeStatus(s){
   if(s==='Finalizado'||s==='Finalizada') return 'Finalizado';
   return STATUS.includes(s)?s:'Novo';
 }
-function normalizeOrder(o){ return {id:o.id||uid('ord'),number:Number(o.number)||null,remoteId:o.remoteId||'',remoteCreated:o.remoteCreated||'',client:o.client||'',whats:o.whats||o.briefing?.whats||'',project:o.project||'Sem projeto',deadline:o.deadline||'',value:Number(o.value)||0,type:o.type||'Outro',status:normalizeStatus(o.status),created:o.created||todayISO(),paid:Boolean(o.paid||o.status==='Pago'||o.status==='Finalizado'),origin:o.origin||'Manual',priority:o.priority||'Normal',briefing:o.briefing||{},files:Array.isArray(o.files)?o.files:[],people:Array.isArray(o.people)?o.people:[],readyArt:o.readyArt||null,products:Array.isArray(o.products)?o.products:[],trackingToken:o.trackingToken||'',trackingEvents:Array.isArray(o.trackingEvents)?o.trackingEvents:[],history:Array.isArray(o.history)?o.history:[]}; }
+function normalizeOrder(o){ return {id:o.id||uid('ord'),number:Number(o.number)||null,remoteId:o.remoteId||'',remoteCreated:o.remoteCreated||'',storeRequestId:o.storeRequestId||'',client:o.client||'',whats:o.whats||o.briefing?.whats||'',project:o.project||'Sem projeto',deadline:o.deadline||'',value:Number(o.value)||0,type:o.type||'Outro',status:normalizeStatus(o.status),created:o.created||todayISO(),paid:Boolean(o.paid||o.status==='Pago'||o.status==='Finalizado'),origin:o.origin||'Manual',priority:o.priority||'Normal',briefing:o.briefing||{},files:Array.isArray(o.files)?o.files:[],people:Array.isArray(o.people)?o.people:[],readyArt:o.readyArt||null,products:Array.isArray(o.products)?o.products:[],trackingToken:o.trackingToken||'',trackingEvents:Array.isArray(o.trackingEvents)?o.trackingEvents:[],history:Array.isArray(o.history)?o.history:[]}; }
 migrateLegacy();
 
 function documentNumber(item){return `#${String(Number(item?.number)||0).padStart(4,'0')}`;}
@@ -1083,7 +1083,7 @@ function getStoreContact(){return {name:safeStorageGet('rafahstudio-store-name',
 function renderStoreHeroVisual(){
   const root=$('#storeHeroVisual');if(!root)return;
   const items=storeItems.filter(x=>x.image_url).slice(0,5);
-  root.innerHTML=`<div class="store-hero-center"><span>RAFAH</span><img src="assets/logo2.svg" alt="RafahStudio"><small>STUDIO</small></div>${items.map((x,i)=>`<button type="button" class="store-hero-product hp-${i}" data-store-view="${x.id}" aria-label="Ver ${esc(x.name)}"><img src="${esc(x.image_url)}" alt="${esc(x.name)}"><span>${esc(x.name)}</span><b>${storeMoney(x.price)}</b></button>`).join('')}`;
+  root.innerHTML=`<div class="store-hero-orbit" aria-hidden="true"><span></span><span></span><span></span></div>${items.map((x,i)=>`<button type="button" class="store-hero-product hp-${i}" data-store-view="${x.id}" aria-label="Ver ${esc(x.name)}"><img src="${esc(x.image_url)}" alt="${esc(x.name)}"><span>${esc(x.category||'Produto')}</span><b>${esc(x.name)}</b><strong>${storeMoney(x.price)}</strong></button>`).join('')}<div class="store-hero-badge"><span>RAFAHSTUDIO</span><b>design que<br>chama atenção.</b></div>`;
 }
 function renderStoreCart(){
   const box=$('#storeCartItems'), total=$('#storeCartTotal'), count=$('#storeCartCount');
@@ -1093,7 +1093,7 @@ function renderStoreCart(){
   box.innerHTML=storeCart.length?storeCart.map(x=>`<div class="store-cart-row"><img src="${esc(x.image_url||'')}" alt=""><div><h4>${esc(x.name)}</h4><small>${storeMoney(x.price)} • ${esc(storeActionMeta(x))}</small><div class="store-cart-qty"><button type="button" data-store-qty="${x.id}" data-dir="-1">−</button><b>${x.qty||1}</b><button type="button" data-store-qty="${x.id}" data-dir="1">+</button></div></div><strong>${storeMoney((Number(x.price)||0)*(x.qty||1))}</strong></div>`).join(''):`<div class="store-empty"><b>＋</b><h3>Seu pedido está vazio</h3><p>Adicione um produto para começar.</p></div>`;
 }
 function openStoreCart(open=true){const d=$('#storeCartDrawer'),b=$('#storeCartBackdrop');if(!d||!b)return;d.classList.toggle('open',open);d.setAttribute('aria-hidden',open?'false':'true');b.classList.toggle('hidden',!open);renderStoreCart();}
-function addStoreItem(item){const found=storeCart.find(x=>String(x.id)===String(item.id));if(found)found.qty=(found.qty||1)+1;else storeCart.push({...item,qty:1});renderStoreCart();openStoreCart(true);}
+function addStoreItem(item){const found=storeCart.find(x=>String(x.id)===String(item.id));if(found)found.qty=(found.qty||1)+1;else storeCart.push({...item,qty:1});renderStoreCart();toast(`${item.name} adicionado ao pedido.`,'success');}
 function openStoreProduct(item){if(!item)return;modal(`<div class="modal-head"><div><span class="eyebrow">${esc(storeActionMeta(item).toUpperCase())}</span><h2>${esc(item.name)}</h2><p class="muted">${esc(item.description||'Material criativo do RafahStudio.')}</p></div><button class="close-modal" data-close-modal>×</button></div><div class="store-product-modal"><div class="store-product-modal-media">${item.image_url?`<img src="${esc(item.image_url)}" alt="${esc(item.name)}">`:'<div class="store-no-image">✦</div>'}</div><div class="store-product-modal-info"><div class="store-product-modal-tag">${esc(item.category||'Produto')}</div><strong class="store-product-modal-price">${storeMoney(item.price)}</strong><p>${storeIsDigital(item)?'Produto digital. O arquivo e a forma de entrega são confirmados após o pedido.':'Serviço com valor de referência. O estúdio confirma o escopo e a produção antes de iniciar.'}</p><button class="store-primary wide" id="storeModalAddBtn">${storeActionLabel(item)} <span>→</span></button></div></div>`);$('#storeModalAddBtn').onclick=()=>{addStoreItem(item);closeModal();};}
 function renderStoreProducts(){
   const grid=$('#storeProductGrid'),empty=$('#storeEmpty'),sk=$('#storeSkeletons');if(!grid)return;
@@ -1106,13 +1106,26 @@ function renderStoreProducts(){
 function renderStoreFeatured(){
   const grid=$('#storeFeaturedGrid');if(!grid)return;const list=storeItems.slice(0,6);grid.innerHTML=list.map(x=>`<article class="store-featured-card"><div class="store-featured-image">${x.image_url?`<img src="${esc(x.image_url)}" alt="${esc(x.name)}">`:'✦'}</div><div><span>${esc(storeActionMeta(x))}</span><h3>${esc(x.name)}</h3><strong>${storeMoney(x.price)}</strong><button type="button" data-store-add="${x.id}">Adicionar</button></div></article>`).join('');
 }
+let storeBanners=[],storeBannerIndex=0,storeBannerTimer=null;
+function renderStoreBanners(list){
+  storeBanners=Array.isArray(list)?list.filter(Boolean):[];storeBannerIndex=0;
+  const root=$('#storeBannerTrack'),dots=$('#storeBannerDots');if(!root)return;
+  const slides=storeBanners.length?storeBanners:[null];
+  root.innerHTML=slides.map((url,i)=>url?`<button type="button" class="store-banner-slide ${i===0?'active':''}" data-banner-index="${i}"><img src="${esc(url)}" alt="Banner promocional ${i+1}"></button>`:`<div class="store-banner-slide store-banner-fallback active"><span>RAFAHSTUDIO</span><b>Seu próximo projeto<br><em>começa aqui.</em></b><small>Adicione banners pelo painel da Loja.</small></div>`).join('');
+  if(dots)dots.innerHTML=storeBanners.length>1?storeBanners.map((_,i)=>`<button type="button" data-banner-dot="${i}" class="${i===0?'active':''}" aria-label="Banner ${i+1}"></button>`).join(''):'';
+  clearInterval(storeBannerTimer);
+  if(storeBanners.length>1){storeBannerTimer=setInterval(()=>setStoreBanner((storeBannerIndex+1)%storeBanners.length),5000);}
+  root.onclick=e=>{const b=e.target.closest('[data-banner-index]');if(b)setStoreBanner(Number(b.dataset.bannerIndex));};
+  dots?.addEventListener('click',e=>{const b=e.target.closest('[data-banner-dot]');if(b)setStoreBanner(Number(b.dataset.bannerDot));});
+}
+function setStoreBanner(i){if(!storeBanners.length)return;storeBannerIndex=(i+storeBanners.length)%storeBanners.length;$$('#storeBannerTrack .store-banner-slide').forEach((x,n)=>x.classList.toggle('active',n===storeBannerIndex));$$('#storeBannerDots button').forEach((x,n)=>x.classList.toggle('active',n===storeBannerIndex));}
 async function loadStore(){
   const token=storeTokenFromHash();if(!token||!supabaseClient)return;storePublicTokenCache=token;
   const grid=$('#storeProductGrid'),sk=$('#storeSkeletons');grid?.classList.add('hidden');sk?.classList.remove('hidden');
   try{
     const {data,error}=await supabaseClient.rpc('get_products_for_store',{p_store_token:token});if(error)throw error;
     storeItems=(Array.isArray(data)?data:[]).map(x=>({...x,price:Number(x.price)||0}));renderStoreHeroVisual();renderStoreFeatured();renderStoreProducts();
-    const profileRes=await supabaseClient.rpc('get_public_profile_for_store',{p_store_token:token});const profile=Array.isArray(profileRes.data)?(profileRes.data[0]||{}):(profileRes.data||{});const socials=$('#storeSocialDock');if(socials)renderPublicSocials(profile);
+    const profileRes=await supabaseClient.rpc('get_public_profile_for_store',{p_store_token:token});const profile=Array.isArray(profileRes.data)?(profileRes.data[0]||{}):(profileRes.data||{});const socials=$('#storeSocialDock');if(socials)renderPublicSocials(profile);renderStoreBanners(profile?.store_banners||[]);
   }catch(e){console.warn('[RafahStudio] Loja pública:',e);storeItems=[];renderStoreHeroVisual();renderStoreFeatured();renderStoreProducts();toast(e?.message||'Não foi possível carregar a loja.','error');}
 }
 function openStoreCustomOrder(){
@@ -1138,7 +1151,7 @@ function setStorePage(page='home'){
   storePage=page;
   $$('#storePage .store-view-page').forEach(el=>el.classList.toggle('store-view-active',el.dataset.storeView===page));
   $$('#storePage [data-store-page]').forEach(a=>a.classList.toggle('active',a.dataset.storePage===page));
-  const search=$('#storeSearch');if(search)search.style.display=page==='products'?'':'none';
+  const search=$('#storeSearch');if(search)search.style.display=page==='products'?'':'none';const bannerRail=$('.store-banner-rail');if(bannerRail)bannerRail.style.display=page==='home'?'':'none';
   const title=page==='products'?'Produtos':page==='services'?'Serviços':page==='order'?'Pedido personalizado':page==='register'?'Cadastro':'Início';
   $('#storePage')?.classList.toggle('store-products-active',page==='products');
   document.title=`RafahStudio • ${title}`;
@@ -1195,8 +1208,8 @@ function openStoreCheckout(){
   if(!requireStoreRegistration('order'))return;
   if(!storeCart.length){toast('Adicione ao menos um item ao pedido.','info');return;}
   const saved=getStoreContact(),items=storeCart.map(x=>({...x}));
-  modal(`<div class="modal-head"><div><span class="eyebrow">PEDIDO</span><h2>Finalize sua solicitação</h2><p class="muted">Sem cadastro. Confirme apenas seus dados para enviarmos o pedido ao estúdio.</p></div><button class="close-modal" data-close-modal>×</button></div><form id="storeCheckoutForm" class="store-public-form"><div class="store-checkout-summary">${items.map(x=>`<div><span>${esc(x.name)} × ${x.qty}</span><b>${storeMoney((Number(x.price)||0)*x.qty)}</b></div>`).join('')}<strong>Total estimado <b>${storeMoney(storeCartTotal())}</b></strong></div><div class="two-col"><label>Seu nome<input id="storeCustomerName" required value="${esc(saved.name)}"></label><label>WhatsApp<input id="storeCustomerWhats" inputmode="tel" required value="${esc(saved.whats)}"></label></div><label>E-mail <small>(opcional)</small><input id="storeCustomerEmail" type="email"></label><label>Observações<textarea id="storeCustomerNote" rows="4" placeholder="Prazo, tamanho, referência ou outro detalhe."></textarea></label><div class="modal-actions"><button type="button" class="btn secondary" data-close-modal>Cancelar</button><button class="btn primary" type="submit">Enviar pedido →</button></div></form>`);
-  $('#storeCheckoutForm').onsubmit=async e=>{e.preventDefault();const btn=e.submitter;btn.disabled=true;try{const name=$('#storeCustomerName').value.trim(),whats=$('#storeCustomerWhats').value.trim();rememberStoreContact(name,whats);const payload=items.map(x=>({id:x.id,qty:x.qty}));const {data,error}=await supabaseClient.rpc('submit_store_order',{p_store_token:storePublicTokenCache||storeTokenFromHash(),p_customer_name:name,p_whatsapp:whats,p_email:$('#storeCustomerEmail').value.trim(),p_items:payload,p_note:$('#storeCustomerNote').value.trim()});if(error)throw error;closeModal();storeCart=[];renderStoreCart();toast(`Pedido #${data} recebido. O estúdio entrará em contato.`,'success');}catch(err){toast(err?.message||'Não foi possível enviar o pedido.','error');btn.disabled=false;}};
+  modal(`<div class="modal-head"><div><span class="eyebrow">PEDIDO</span><h2>Enviar pedido</h2><p class="muted">Seu pedido será recebido pelo estúdio como um novo pedido, sem abrir uma tela separada de compras.</p></div><button class="close-modal" data-close-modal>×</button></div><form id="storeCheckoutForm" class="store-public-form"><div class="store-checkout-summary">${items.map(x=>`<div><span>${esc(x.name)} × ${x.qty}</span><b>${storeMoney((Number(x.price)||0)*x.qty)}</b></div>`).join('')}<strong>Total estimado <b>${storeMoney(storeCartTotal())}</b></strong></div><div class="two-col"><label>Seu nome<input id="storeCustomerName" required value="${esc(saved.name)}"></label><label>WhatsApp<input id="storeCustomerWhats" inputmode="tel" required value="${esc(saved.whats)}"></label></div><label>E-mail <small>(opcional)</small><input id="storeCustomerEmail" type="email" value="${esc(saved.email||'')}"></label><label>Observações<textarea id="storeCustomerNote" rows="4" placeholder="Prazo, tamanho, referência ou outro detalhe."></textarea></label><div class="modal-actions"><button type="button" class="btn secondary" data-close-modal>Cancelar</button><button class="btn primary" type="submit">Confirmar pedido →</button></div></form>`);
+  $('#storeCheckoutForm').onsubmit=async e=>{e.preventDefault();const btn=e.submitter;btn.disabled=true;try{const name=$('#storeCustomerName').value.trim(),whats=$('#storeCustomerWhats').value.trim(),email=$('#storeCustomerEmail').value.trim();rememberStoreContact(name,whats);const payload=items.map(x=>({id:x.id,qty:x.qty}));const {data,error}=await supabaseClient.rpc('submit_store_order',{p_store_token:storePublicTokenCache||storeTokenFromHash(),p_customer_name:name,p_whatsapp:whats,p_email:email,p_items:payload,p_note:$('#storeCustomerNote').value.trim()});if(error)throw error;closeModal();storeCart=[];renderStoreCart();toast(`Pedido #${data} enviado. Ele ficará aguardando atendimento do estúdio.`,'success');}catch(err){toast(err?.message||'Não foi possível enviar o pedido.','error');btn.disabled=false;}};
 }
 function renderStoreAdmin(){
   const all=products||[], pub=all.filter(x=>x.is_published);
@@ -1210,21 +1223,56 @@ async function refreshStoreRequests(){
   try{
     const {data,error}=await supabaseClient.rpc('get_store_order_requests_for_owner',{p_owner_secret:getOwnerToken()});
     if(error)throw error;
-    const rows=Array.isArray(data)?data:[];$('#storeRequestCount')?.replaceChildren(document.createTextNode(String(rows.length)));
-    const latest=Number(rows[0]?.id||0);
-    if(storeLastRequestId&&latest>storeLastRequestId){
-      const r=rows[0];
-      notify('Novo pedido na loja',`${r.customer_name} • ${storeMoney(r.total)}`,'info','loja');
+    const rows=Array.isArray(data)?data:[];
+    const newRows=rows.filter(r=>!orders.some(o=>String(o.storeRequestId||'')===String(r.id)));
+    let changed=false;
+    for(const r of [...newRows].reverse()){
+      const rawItems=Array.isArray(r.items)?r.items:[];
+      const mappedProducts=rawItems.map(it=>{const p=products.find(x=>String(x.id)===String(it.id));return {productId:it.id,name:p?.name||it.name||'Produto da loja',price:Number(p?.price??it.price??0)||0,qty:Math.max(1,Number(it.qty)||1)};});
+      const isCustom=rawItems.some(it=>!it.id);
+      const customProject=String(r.note||'').match(/^Projeto:\s*(.+?)(?:\n|$)/i)?.[1]||'';
+      const project=isCustom?(customProject||'Pedido personalizado'):(mappedProducts.map(x=>x.name).filter(Boolean).slice(0,2).join(' + ')||'Pedido da loja');
+      const order={
+        id:uid('ord'),number:Math.max(0,...orders.map(x=>Number(x.number)||0),...quotes.map(x=>Number(x.number)||0))+1,
+        storeRequestId:String(r.id),client:r.customer_name||'Cliente da loja',whats:r.whatsapp||'',project,deadline:'',
+        value:Number(r.total)||mappedProducts.reduce((a,x)=>a+x.price*x.qty,0),type:isCustom?'Pedido personalizado':'Produto da loja',
+        status:'Novo',priority:'Normal',created:r.created_at?.slice(0,10)||todayISO(),paid:false,origin:'Loja',
+        briefing:{whats:r.whatsapp||'',notes:r.note||'',email:r.email||'',storeRequestId:String(r.id)},files:[],people:[],readyArt:null,products:mappedProducts,history:[]
+      };
+      addHistory(order,'Pedido recebido pela loja pública');
+      orders.unshift(order);
+      if(order.client&&!clients.some(c=>String(c.name||'').trim().toLowerCase()===String(order.client).trim().toLowerCase()&&normalizeWhatsApp(c.whats)===normalizeWhatsApp(order.whats))){
+        clients.unshift({id:uid('cli'),name:order.client,company:'',whats:order.whats||'',email:r.email||'',instagram:'',notes:'Cliente cadastrado pela loja pública',created:todayISO(),origin:'Loja'});
+      }
+      changed=true;
+      notify('Novo pedido da loja',`${order.project} • ${order.client}`,'success','pedidos',order.id);
     }
-    if(latest>storeLastRequestId)storeLastRequestId=latest;
-    const el=$('#storeRequestsList');if(!el)return;
-    el.innerHTML=rows.map(r=>`<article class="store-request-row"><strong>${esc(r.customer_name)}</strong><div class="store-request-meta"><span>${esc(r.whatsapp||'Sem WhatsApp')}</span><span>${esc(r.email||'')}</span><span>${formatRelative(r.created_at)}</span><b>${storeMoney(r.total)}</b></div><div class="muted">${(r.items||[]).map(x=>`${esc(x.name||'Produto')} × ${x.qty||1}`).join(' • ')}</div>${r.note?`<p>${esc(r.note)}</p>`:''}</article>`).join('')||'<div class="empty-state"><h3>Nenhuma solicitação ainda</h3><p>Quando um cliente finalizar um pedido pela loja, ele aparecerá aqui.</p></div>';
-  }catch(e){console.warn('[RafahStudio] Solicitações da loja:',e);}
+    const latest=Number(rows[0]?.id||0);
+    $('#storeRequestCount')?.replaceChildren(document.createTextNode(String(rows.filter(r=>!orders.some(o=>String(o.storeRequestId||'')===String(r.id))).length)));
+    if(changed){persist();if(currentPage==='pedidos')renderOrders();else render();}
+    const el=$('#storeRequestsList');
+    if(el){el.innerHTML=rows.map(r=>`<article class="store-request-row"><strong>${esc(r.customer_name)}</strong><div class="store-request-meta"><span>${esc(r.whatsapp||'Sem WhatsApp')}</span><span>${esc(r.email||'')}</span><span>${formatRelative(r.created_at)}</span><b>${storeMoney(r.total)}</b></div><div class="muted">${(r.items||[]).map(x=>`${esc(x.name||'Produto')} × ${x.qty||1}`).join(' • ')}</div>${r.note?`<p>${esc(r.note)}</p>`:''}</article>`).join('')||'<div class="empty-state"><h3>Nenhum pedido recebido pela loja</h3><p>Quando alguém comprar, o pedido aparecerá automaticamente em Pedidos.</p></div>';}
+  }catch(e){console.warn('[RafahStudio] Pedidos da loja:',e);}
+}
+async function uploadStoreBanner(file,slot){
+  if(!supabaseClient)throw new Error('Supabase não está disponível.');
+  if(file.size>12*1024*1024)throw new Error('O banner deve ter no máximo 12 MB.');
+  const safe=(file.name||'banner').replace(/[^a-zA-Z0-9._-]/g,'_');
+  const path=`store-banners/${getOwnerToken()}/${slot}-${Date.now()}-${safe}`;
+  const {error}=await supabaseClient.storage.from('briefing-files').upload(path,file,{upsert:false,contentType:file.type||'image/jpeg'});
+  if(error)throw error;
+  return supabaseClient.storage.from('briefing-files').getPublicUrl(path).data.publicUrl;
+}
+function renderStoreBannersAdmin(){
+  const root=$('#storeBannerSlots');if(!root)return;
+  const banners=Array.isArray(designer.storeBanners)?designer.storeBanners:[];
+  root.innerHTML=[0,1,2].map(i=>{const url=banners[i]||'';return `<label class="store-banner-slot ${url?'has-image':''}">${url?`<img src="${esc(url)}" alt="Banner ${i+1}">`:`<span class="store-banner-placeholder"><b>+</b><small>Adicionar banner ${i+1}</small></span>`}<input type="file" data-store-banner-slot="${i}" accept="image/jpeg,image/png,image/webp"><span class="store-banner-slot-label">${url?'Trocar banner':'Adicionar imagem'}</span></label>`;}).join('');
+  root.querySelectorAll('[data-store-banner-slot]').forEach(input=>input.addEventListener('change',async e=>{const file=e.target.files?.[0],slot=Number(e.target.dataset.storeBannerSlot);if(!file)return;try{e.target.disabled=true;toast('Enviando banner…','info');const url=await uploadStoreBanner(file,slot);const next=[...(designer.storeBanners||[])];next[slot]=url;designer.storeBanners=next;await saveRemoteProfile();await syncPublicProfileLink();renderStoreBannersAdmin();toast('Banner salvo na loja.','success');}catch(err){toast(err?.message||'Não foi possível salvar o banner.','error');}finally{e.target.disabled=false;}}));
 }
 function initStoreAdmin(){
   if(!currentUser)return;
   const link=storeUrl();const t=$('#storeLinkText');if(t)t.textContent=link;
-  renderStoreAdmin();refreshStoreRequests();clearInterval(storeRequestPollTimer);storeRequestPollTimer=setInterval(()=>{if(currentPage==='loja')refreshStoreRequests();},15000);
+  renderStoreAdmin();renderStoreBannersAdmin();refreshStoreRequests();clearInterval(storeRequestPollTimer);storeRequestPollTimer=setInterval(()=>{if(currentPage==='loja')refreshStoreRequests();},15000);
 }
 
 function normalizeWhatsApp(value){return String(value||'').replace(/\D/g,'');}
@@ -1381,7 +1429,8 @@ async function saveRemoteProfile(){
       area:designer.area||'Designer gráfico',
       bio:designer.bio||'',
       photo:designer.photo||'',
-      banner:designer.banner||''
+      banner:designer.banner||'',
+      store_banners:Array.isArray(designer.storeBanners)?designer.storeBanners:[]
     },{onConflict:'id'});
     if(error)throw error;
     return true;
@@ -1406,7 +1455,8 @@ async function loadRemoteProfile(){
       area:data.area||designer.area||currentUser.area,
       bio:data.bio||designer.bio,
       photo:data.photo||designer.photo,
-      banner:data.banner||designer.banner
+      banner:data.banner||designer.banner,
+      storeBanners:Array.isArray(data.store_banners)?data.store_banners:(designer.storeBanners||[])
     }};
     persist();
     return true;
@@ -1460,7 +1510,7 @@ async function uploadOrderAsset(file,orderId,label){
 }
 async function saveOrder(existing,peopleDraft=[],readyArtDraft=null,productDraft=[]){
   const was=existing?.status;
-  const data={client:$('#orderClient').value.trim(),whats:$('#orderWhats').value.trim(),project:$('#orderProject').value.trim(),deadline:$('#orderDeadline').value,value:Number($('#orderValue').value)||0,type:$('#orderType').value,status:$('#orderStatus').value,priority:$('#orderPriority').value,briefing:{...(existing?.briefing||{}),texts:$('#orderTexts').value.trim(),refs:$('#orderRefs').value.trim(),notes:$('#orderNotes').value.trim(),people:peopleDraft,whats:$('#orderWhats').value.trim()},files:existing?.files||[],people:existing?.people||[],readyArt:existing?.readyArt||null,products:Array.isArray(productDraft)?productDraft:[],origin:existing?.origin||'Manual',paid:existing?.paid||false,trackingToken:existing?.trackingToken||''};
+  const data={client:$('#orderClient').value.trim(),whats:$('#orderWhats').value.trim(),project:$('#orderProject').value.trim(),deadline:$('#orderDeadline').value,value:Number($('#orderValue').value)||0,type:$('#orderType').value,status:$('#orderStatus').value,priority:$('#orderPriority').value,briefing:{...(existing?.briefing||{}),texts:$('#orderTexts').value.trim(),refs:$('#orderRefs').value.trim(),notes:$('#orderNotes').value.trim(),people:peopleDraft,whats:$('#orderWhats').value.trim()},files:existing?.files||[],people:existing?.people||[],readyArt:existing?.readyArt||null,products:Array.isArray(productDraft)?productDraft:[],origin:existing?.origin||'Manual',storeRequestId:existing?.storeRequestId||'',paid:existing?.paid||false,trackingToken:existing?.trackingToken||''};
   if(!data.client||!data.project){toast('Cliente e projeto são obrigatórios.','error');return;}
   const btn=$('#orderForm button[type="submit"]');if(btn){btn.disabled=true;btn.textContent='Salvando…';}
   try{
@@ -1702,7 +1752,8 @@ async function syncPublicProfileLink(token=getPublicToken()){
       p_photo:designer.photo||'',
       p_pix_type:designer.pixType||'CPF',
       p_pix_key:designer.pixKey||'',
-      p_pix_name:designer.pixName||''
+      p_pix_name:designer.pixName||'',
+      p_store_banners:Array.isArray(designer.storeBanners)?designer.storeBanners:[]
     });
     if(error)throw error;
     return true;
@@ -2185,6 +2236,7 @@ async function runLiveSyncCycle(kind){
     else if(kind==='products'){await refreshProductsFromSupabase();}
     else if(kind==='tracking')await syncTrackingEventsForOwner();
     else if(kind==='workspace')await refreshWorkspaceFromRemote();
+    else if(kind==='store')await refreshStoreRequests();
   }catch(e){console.warn('[RafahStudio] sincronização:',e);}
 }
 function scheduleLiveSync(kind,ms){
@@ -2200,16 +2252,17 @@ function startLiveSync(){
   setTimeout(()=>subscribeDesignerTracking(),900);
   setTimeout(()=>{
     if(document.hidden||!navigator.onLine)return;
-    runLiveSyncCycle('briefings');runLiveSyncCycle('tracking');runLiveSyncCycle('products');runLiveSyncCycle('workspace');
+    runLiveSyncCycle('briefings');runLiveSyncCycle('tracking');runLiveSyncCycle('products');runLiveSyncCycle('store');runLiveSyncCycle('workspace');
   },400);
   // Briefings têm prioridade: uma consulta leve em segundo plano mantém
   // a chegada de novos pedidos perceptível sem voltar a pesar o restante do app.
   scheduleLiveSync('briefings',15000);
   scheduleLiveSync('tracking',12000);
   scheduleLiveSync('products',30000);
+  scheduleLiveSync('store',15000);
   scheduleLiveSync('workspace',45000);
-  document.addEventListener('visibilitychange',()=>{if(!document.hidden){runLiveSyncCycle('briefings');runLiveSyncCycle('tracking');runLiveSyncCycle('products');runLiveSyncCycle('workspace');}}, {passive:true});
-  window.addEventListener('online',()=>{runLiveSyncCycle('briefings');runLiveSyncCycle('tracking');runLiveSyncCycle('products');runLiveSyncCycle('workspace');},{passive:true});
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden){runLiveSyncCycle('briefings');runLiveSyncCycle('tracking');runLiveSyncCycle('products');runLiveSyncCycle('store');runLiveSyncCycle('workspace');}}, {passive:true});
+  window.addEventListener('online',()=>{runLiveSyncCycle('briefings');runLiveSyncCycle('tracking');runLiveSyncCycle('products');runLiveSyncCycle('store');runLiveSyncCycle('workspace');},{passive:true});
 }
 async function registerServiceWorker(){
   if(!('serviceWorker' in navigator)||location.protocol==='file:')return;
